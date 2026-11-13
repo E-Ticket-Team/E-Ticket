@@ -62,7 +62,8 @@ export class CreateEventDto {
   status?: EventStatusEnum;
 
   @ApiProperty({ example: 'a0000000-0000-0000-0000-000000000001' })
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   organizerId: string;
 }
+

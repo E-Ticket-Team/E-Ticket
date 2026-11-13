@@ -11,8 +11,8 @@ import {
 } from 'class-validator';
 
 export class CreateTicketTypeDto {
-  @ApiProperty({ example: 'a0000000-0000-0000-0000-000000000002' })
-  @IsUUID()
+  @ApiProperty({ example: 'b0000000-0000-0000-0000-000000000001' })
+  @IsString()
   @IsNotEmpty()
   eventId: string;
 
@@ -42,3 +42,4 @@ export class ValidateTicketDto {
   @IsNotEmpty()
   ticketCode: string;
 }
+
