@@ -33,3 +33,4 @@ export class ApiErrorResponseDto {
   @ApiProperty({ example: 'POST' })
   method: string;
 }
+

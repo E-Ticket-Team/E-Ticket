@@ -30,3 +30,4 @@ export class HealthResponseDto {
   @ApiProperty({ type: () => DatabaseHealthDto })
   database: DatabaseHealthDto;
 }
+

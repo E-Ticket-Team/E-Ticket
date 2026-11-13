@@ -22,3 +22,4 @@ services:
 volumes:
   eticket_postgres_data:
     driver: local
+

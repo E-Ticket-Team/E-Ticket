@@ -19,3 +19,4 @@ export default (): AppConfig => ({
     url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/eticket?schema=public',
   },
 });
+

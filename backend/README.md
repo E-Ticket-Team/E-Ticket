@@ -111,3 +111,4 @@ npm run test:e2e
   - `GET /api/v1/tickets/types/event/:eventId`
   - `GET /api/v1/tickets/:code`
   - `POST /api/v1/tickets/validate`
+

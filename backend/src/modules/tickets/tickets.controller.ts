@@ -57,3 +57,4 @@ export class TicketsController {
     return this.ticketsService.validateTicket(dto);
   }
 }
+

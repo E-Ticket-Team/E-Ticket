@@ -8,3 +8,4 @@ import { EventsService } from './events.service';
   exports: [EventsService],
 })
 export class EventsModule {}
+
