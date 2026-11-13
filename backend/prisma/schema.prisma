@@ -1,0 +1,120 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  ORGANIZER
+  CUSTOMER
+  SCANNER
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum TicketStatus {
+  VALID
+  USED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String?
+  lastName  String?
+  role      Role     @default(CUSTOMER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events    Event[]
+  orders    Order[]
+
+  @@map("users")
+}
+
+model Event {
+  id          String      @id @default(uuid())
+  title       String
+  description String?
+  category    String?
+  venue       String
+  location    String?
+  bannerUrl   String?
+  startDate   DateTime
+  endDate     DateTime
+  status      EventStatus @default(DRAFT)
+  organizerId String
+  organizer   User        @relation(fields: [organizerId], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  ticketTypes TicketType[]
+
+  @@map("events")
+}
+
+model TicketType {
+  id                String   @id @default(uuid())
+  eventId           String
+  event             Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  price             Decimal  @db.Decimal(10, 2)
+  totalQuantity     Int
+  remainingQuantity Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tickets           Ticket[]
+
+  @@map("ticket_types")
+}
+
+model Order {
+  id               String      @id @default(uuid())
+  userId           String
+  user             User        @relation(fields: [userId], references: [id])
+  totalAmount      Decimal     @db.Decimal(10, 2)
+  status           OrderStatus @default(PENDING)
+  paymentReference String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  tickets          Ticket[]
+
+  @@map("orders")
+}
+
+model Ticket {
+  id           String       @id @default(uuid())
+  orderId      String
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketTypeId String
+  ticketType   TicketType   @relation(fields: [ticketTypeId], references: [id])
+  ticketCode   String       @unique
+  qrCode       String?
+  status       TicketStatus @default(VALID)
+  usedAt       DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("tickets")
+}
