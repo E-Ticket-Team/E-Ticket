@@ -30,9 +30,9 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  // Global Prefix (excluding /health so it is available directly at /health)
+  // Global Prefix (excluding /health and root / so they are available directly)
   app.setGlobalPrefix(apiPrefix, {
-    exclude: ['health'],
+    exclude: ['health', ''],
   });
 
   // Global Validation Pipe

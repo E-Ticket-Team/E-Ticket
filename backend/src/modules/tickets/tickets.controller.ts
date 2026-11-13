@@ -31,6 +31,20 @@ export class TicketsController {
     return this.ticketsService.getTicketTypesByEvent(eventId);
   }
 
+  @Get('validate')
+  @ApiOperation({ summary: 'Ticket validation endpoint information' })
+  getValidateInfo() {
+    return {
+      message:
+        'To validate a ticket, send a POST request with the ticketCode in JSON format.',
+      method: 'POST',
+      endpoint: '/api/v1/tickets/validate',
+      example: {
+        ticketCode: 'TKT-2026-VIP-001',
+      },
+    };
+  }
+
   @Get(':code')
   @ApiOperation({ summary: 'Get ticket details by ticket code' })
   @ApiResponse({ status: HttpStatus.OK, description: 'Ticket found' })
