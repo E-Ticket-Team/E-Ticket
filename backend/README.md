@@ -18,6 +18,7 @@ backend/
 │   │   ├── configuration.ts # Strongly-typed config loader
 │   │   └── env.validation.ts# Joi/Class-validator environment schema validation
 │   ├── modules/
+│   │   ├── auth/           # JWT authentication, registration for customer/organization, guards & strategies
 │   │   ├── health/         # GET /health endpoint (checks PostgreSQL connectivity)
 │   │   ├── prisma/         # Global PrismaService & connection lifecycle
 │   │   ├── events/         # Event management REST endpoints
@@ -52,6 +53,8 @@ backend/
 | `API_PREFIX` | Versioned route prefix | `api/v1` |
 | `CORS_ORIGIN` | Allowed CORS origins (comma-separated or `*`) | `*` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/eticket?schema=public` |
+| `JWT_SECRET` | Secret key used to sign and verify JWT authentication tokens | `eticket-jwt-secret-key-change-in-production-2026` |
+| `JWT_EXPIRES_IN` | Token expiration time (e.g. `7d`, `24h`) | `7d` |
 
 ## Setup & Running Instructions
 
@@ -100,6 +103,13 @@ npm run test:e2e
 
 - **Health Check:** `GET /health`
 - **Swagger Docs:** `GET /api/docs`
+- **Authentication & User Management:**
+  - `POST /api/v1/auth/register/customer` — Register a customer account
+  - `POST /api/v1/auth/register/organization` — Register an organization/organizer account
+  - `POST /api/v1/auth/register` — Unified registration (supports CUSTOMER or ORGANIZER)
+  - `POST /api/v1/auth/login` — Login with email and password (returns JWT Bearer token)
+  - `GET /api/v1/auth/me` — Get authenticated user profile (`Bearer <token>`)
+  - `GET /api/v1/auth/profile` — Alias to fetch current user profile
 - **Events:**
   - `GET /api/v1/events`
   - `GET /api/v1/events/:id`

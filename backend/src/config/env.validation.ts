@@ -27,6 +27,14 @@ class EnvironmentVariables {
 
   @IsString()
   DATABASE_URL: string;
+
+  @IsString()
+  @IsOptional()
+  JWT_SECRET?: string = 'eticket-jwt-secret-key-change-in-production-2026';
+
+  @IsString()
+  @IsOptional()
+  JWT_EXPIRES_IN?: string = '7d';
 }
 
 export function validate(config: Record<string, unknown>) {

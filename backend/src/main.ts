@@ -67,8 +67,23 @@ async function bootstrap() {
     )
     .setVersion('1.0.0')
     .addTag('Health', 'Health checks and database connectivity monitoring')
+    .addTag(
+      'Auth',
+      'Authentication and registration endpoints for customers and organizations',
+    )
     .addTag('Events', 'Event management endpoints')
     .addTag('Tickets', 'Ticket tier and validation endpoints')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'Authorization',
+        description: 'Enter your JWT Bearer token',
+        in: 'header',
+      },
+      'JWT-auth',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
