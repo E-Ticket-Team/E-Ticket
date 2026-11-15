@@ -35,14 +35,16 @@ enum TicketStatus {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  firstName String?
-  lastName  String?
-  role      Role     @default(CUSTOMER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(uuid())
+  email            String   @unique
+  password         String
+  firstName        String?
+  lastName         String?
+  organizationName String?
+  phoneNumber      String?
+  role             Role     @default(CUSTOMER)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   events    Event[]
   orders    Order[]

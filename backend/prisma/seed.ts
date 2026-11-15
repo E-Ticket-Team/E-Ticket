@@ -1,20 +1,28 @@
 import { PrismaClient, Role, EventStatus, TicketStatus, OrderStatus } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('Seeding database with initial data...');
 
+  const defaultPasswordHash = bcrypt.hashSync('Password123!', 10);
+
   // Create organizer
   const organizer = await prisma.user.upsert({
     where: { email: 'organizer@eticket.com' },
-    update: {},
+    update: {
+      password: defaultPasswordHash,
+      organizationName: 'Cambodia Tech Events Ltd.',
+    },
     create: {
       id: 'a0000000-0000-0000-0000-000000000001',
       email: 'organizer@eticket.com',
-      password: 'hashed_password_123',
+      password: defaultPasswordHash,
       firstName: 'Channthy',
       lastName: 'Tha',
+      organizationName: 'Cambodia Tech Events Ltd.',
+      phoneNumber: '+85598765432',
       role: Role.ORGANIZER,
     },
   });
@@ -22,13 +30,16 @@ async function main() {
   // Create customer
   const customer = await prisma.user.upsert({
     where: { email: 'customer@eticket.com' },
-    update: {},
+    update: {
+      password: defaultPasswordHash,
+    },
     create: {
       id: 'a0000000-0000-0000-0000-000000000002',
       email: 'customer@eticket.com',
-      password: 'hashed_password_456',
+      password: defaultPasswordHash,
       firstName: 'Sophea',
       lastName: 'Sreng',
+      phoneNumber: '+85512345678',
       role: Role.CUSTOMER,
     },
   });

@@ -118,6 +118,11 @@ npm run test:e2e
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Health check (API status & PostgreSQL connectivity) |
+| `POST` | `/api/v1/auth/register/customer` | Register a new customer |
+| `POST` | `/api/v1/auth/register/organization` | Register a new organization / event organizer |
+| `POST` | `/api/v1/auth/register` | Unified user registration (Customer or Organization) |
+| `POST` | `/api/v1/auth/login` | Login with email and password (returns JWT Bearer token) |
+| `GET` | `/api/v1/auth/me` | Retrieve profile of currently authenticated user (`Bearer <token>`) |
 | `GET` | `/api/v1/events` | List all events (supports `?category=` and `?status=`) |
 | `GET` | `/api/v1/events/:id` | Get event details by ID |
 | `POST` | `/api/v1/events` | Create a new event |

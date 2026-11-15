@@ -4,6 +4,7 @@ import configuration from './config/configuration';
 import { validate } from './config/env.validation';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { EventsModule } from './modules/events/events.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { AppController } from './app.controller';
@@ -19,6 +20,7 @@ import { AppController } from './app.controller';
     }),
     PrismaModule,
     HealthModule,
+    AuthModule,
     EventsModule,
     TicketsModule,
   ],
