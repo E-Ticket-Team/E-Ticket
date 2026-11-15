@@ -1,5 +1,7 @@
 # Universal E-Ticketing Platform
 
+![CI Pipeline](https://github.com/E-Ticket-Team/E-Ticket/actions/workflows/ci.yml/badge.svg)
+
 A web-based platform for creating, selling, purchasing, and validating digital tickets for events, concerts, cinemas, workshops, sports, and entertainment venues.
 
 ## Project Goals
@@ -31,13 +33,41 @@ A web-based platform for creating, selling, purchasing, and validating digital t
 
 ## Project Structure
 
-- `frontend/` — React application
-- `backend/` — NestJS REST API (modular architecture, Prisma ORM, health checks)
+- `frontend/` — React TypeScript application (Vite, Tailwind/CSS, QR code support)
+- `backend/` — NestJS REST API (modular architecture, Prisma ORM, health checks, Swagger)
 - `docs/` — Requirements, architecture, and API documentation
-- `infra/` — Deployment and infrastructure configuration
-- `docker-compose.yml` — Containerized PostgreSQL database
+- `infra/` — Deployment, Nginx reverse proxy, and infrastructure configuration
+- `docker-compose.yml` — Full containerized stack orchestration (PostgreSQL, Backend, Frontend)
+- `docker-compose.dev.yml` — Containerized development environment with hot-reload
+- `.github/workflows/ci.yml` — GitHub Actions CI pipeline (lint, unit/e2e tests, Docker builds)
 
-## Quick Start (Backend)
+## Quick Start (Docker - Recommended)
+
+The entire platform (Frontend, Backend, and PostgreSQL) can be launched with Docker:
+
+```bash
+# 1. Copy environment variables
+cp .env.example .env
+
+# 2. Build and launch all containers
+docker compose up -d --build
+
+# 3. View status and logs
+docker compose ps
+docker compose logs -f
+```
+
+- **Frontend Application:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:4000](http://localhost:4000)
+- **Health Check:** [http://localhost:4000/health](http://localhost:4000/health)
+- **Interactive Swagger Docs:** [http://localhost:4000/api/docs](http://localhost:4000/api/docs)
+
+To shut down the platform:
+```bash
+docker compose down
+```
+
+## Quick Start (Local Backend Development)
 
 ### Prerequisites
 
@@ -138,6 +168,10 @@ npm run test:e2e
 - [x] Backend: Swagger / OpenAPI interactive documentation
 - [x] Backend: Unit and E2E testing suites
 - [x] Frontend: React application development
+- [x] DevOps: Multi-stage Docker containerization for Backend & Frontend
+- [x] DevOps: Full-stack Docker Compose and development compose setup
+- [x] DevOps: Nginx reverse proxy with SPA fallback & API routing
+- [x] DevOps: GitHub Actions CI pipeline with automated testing & container verification
 
 ## Security
 
