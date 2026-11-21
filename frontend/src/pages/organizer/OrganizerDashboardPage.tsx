@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarDays,
@@ -11,6 +11,8 @@ import {
   Trash2,
   TrendingUp,
 } from 'lucide-react';
+import { useGSAP } from '../../animations/gsap';
+import { runStaggerScrollReveal } from '../../animations/scroll-reveals';
 import { useToast } from '../../contexts/ToastContext';
 import { ApiError } from '../../services/api';
 import { eventsService } from '../../services/events.service';
@@ -46,6 +48,7 @@ export function OrganizerDashboardPage({
   initialTab?: OrganizerTab;
 }) {
   const { showToast } = useToast();
+  const kpiRef = useRef<HTMLDivElement | null>(null);
 
   const [dashboard, setDashboard] = useState<OrganizerDashboardData | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -84,6 +87,15 @@ export function OrganizerDashboardPage({
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useGSAP(
+    () => {
+      if (!loading && dashboard && initialTab === 'overview') {
+        runStaggerScrollReveal('.kpi-card', kpiRef.current);
+      }
+    },
+    { dependencies: [loading, dashboard, initialTab], scope: kpiRef },
+  );
 
   const visibleEvents = useMemo(() => {
     if (statusFilter === 'ALL') return events;
@@ -144,10 +156,17 @@ export function OrganizerDashboardPage({
                 : 'Live sales, revenue, inventory, and gate check-in performance.'
           }
           actions={
-            <Link to="/organizer/events/new" className="btn btn-primary">
-              <Plus size={17} />
-              <span>Create Event</span>
-            </Link>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {initialTab === 'overview' && (
+                <Link to="/organizer/attendees" className="btn btn-secondary">
+                  <span>Attendees</span>
+                </Link>
+              )}
+              <Link to="/organizer/events/new" className="btn btn-primary">
+                <Plus size={17} />
+                <span>Create Event</span>
+              </Link>
+            </div>
           }
         />
 
@@ -159,7 +178,7 @@ export function OrganizerDashboardPage({
             <Skeleton height={240} />
           </div>
         ) : initialTab === 'overview' && dashboard && summary ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div ref={kpiRef} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <div className="kpi-grid" style={{ marginBottom: 0 }}>
               <StatCard
                 label="Total Events"
@@ -216,12 +235,12 @@ export function OrganizerDashboardPage({
             </div>
 
             <div className="card card-padded">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <TrendingUp size={18} color="var(--brand-primary)" />
-                  <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Event Performance</h2>
+                  <TrendingUp size={18} color="var(--color-primary)" />
+                  <h2 className="card-title">Event Performance</h2>
                 </div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                   {dashboard.revenuePolicy}
                 </span>
               </div>
@@ -246,20 +265,20 @@ export function OrganizerDashboardPage({
                         <tr key={row.eventId}>
                           <td>
                             <div style={{ fontWeight: 700 }}>{row.title}</div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                               {row.venue}
                             </div>
                           </td>
                           <td>
                             <StatusBadge status={row.status} />
                           </td>
-                          <td>
+                          <td className="tabular-nums">
                             <strong>{row.ticketsSold}</strong> / {row.totalCapacity} ({row.remainingQuantity} left)
                           </td>
-                          <td>
+                          <td className="tabular-nums">
                             {row.checkIns} ({row.checkInRate}%)
                           </td>
-                          <td>
+                          <td className="tabular-nums">
                             <strong>{formatCurrency(row.netRevenue)}</strong>
                           </td>
                           <td style={{ textAlign: 'right' }}>
@@ -308,7 +327,7 @@ export function OrganizerDashboardPage({
                       </td>
                       <td>
                         <div style={{ fontWeight: 600 }}>{formatPersonName(ord.user)}</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                           {ord.user?.email}
                         </div>
                       </td>
@@ -319,13 +338,13 @@ export function OrganizerDashboardPage({
                           </div>
                         ))}
                       </td>
-                      <td>
+                      <td className="tabular-nums">
                         <strong>{formatCurrency(ord.totalAmount)}</strong>
                       </td>
                       <td>
                         <StatusBadge status={ord.status} />
                       </td>
-                      <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                      <td className="tabular-nums" style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
                         {formatDateTime(ord.createdAt)}
                       </td>
                     </tr>
@@ -386,7 +405,7 @@ export function OrganizerDashboardPage({
                         <tr key={ev.id}>
                           <td>
                             <div style={{ fontWeight: 700 }}>{ev.title}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                               {ev.category || 'Uncategorized'}
                             </div>
                           </td>
@@ -394,7 +413,7 @@ export function OrganizerDashboardPage({
                             <div style={{ fontSize: '0.86rem' }}>
                               {formatDateRange(ev.startDate, ev.endDate)}
                             </div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                               {ev.venue}
                               {ev.location ? ` · ${ev.location}` : ''}
                             </div>
@@ -420,10 +439,10 @@ export function OrganizerDashboardPage({
                             </div>
                           </td>
                           <td>
-                            <div style={{ fontWeight: 600 }}>
+                            <div className="tabular-nums" style={{ fontWeight: 600 }}>
                               {ev.ticketTypes?.length ?? 0} tier(s)
                             </div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            <div className="tabular-nums" style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                               {cap.total > 0
                                 ? `${cap.remaining} / ${cap.total} available`
                                 : 'No tiers yet'}

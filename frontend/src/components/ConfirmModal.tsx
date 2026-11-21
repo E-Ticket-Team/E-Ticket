@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { animatePanelEnter } from '../animations/transitions';
 
 interface ConfirmModalProps {
   open: boolean;
@@ -14,28 +16,50 @@ export function ConfirmModal({
   open,
   title,
   message,
-  confirmLabel = 'Confirm Delete',
+  confirmLabel = 'Confirm',
   busy = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    animatePanelEnter(panelRef.current);
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !busy) onCancel();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, busy, onCancel]);
+
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div className="modal-panel">
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      onClick={() => !busy && onCancel()}
+    >
+      <div
+        ref={panelRef}
+        className="modal-panel"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <div
             style={{
-              width: 40,
-              height: 40,
+              width: 42,
+              height: 42,
               borderRadius: 10,
-              backgroundColor: 'var(--danger-bg)',
-              color: 'var(--danger-solid)',
+              backgroundColor: 'var(--color-danger-bg)',
+              color: 'var(--color-danger)',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '1px solid var(--danger-border)',
+              border: '1px solid var(--color-danger-border)',
             }}
           >
             <AlertTriangle size={20} />
@@ -45,7 +69,7 @@ export function ConfirmModal({
           </h3>
         </div>
 
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.93rem', marginBottom: 22 }}>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.93rem', marginBottom: 22 }}>
           {message}
         </p>
 

@@ -20,6 +20,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { AUTH_COOKIE_NAME, parseDurationMs } from './auth.constants';
+import { GoogleAuthDto } from './dto/google-auth.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterOrganizationDto } from './dto/register-organization.dto';
@@ -175,6 +176,38 @@ export class AuthController {
     @Res({ passthrough: true }) res?: Response,
   ): Promise<AuthResponseDto> {
     const auth = await this.authService.login(dto);
+    this.setAuthCookie(res, auth.accessToken);
+    return auth;
+  }
+
+  @Get('google/config')
+  @ApiOperation({
+    summary: 'Get public Google Sign-In configuration',
+    description:
+      'Returns whether Google OAuth Sign-In is enabled and its public Client ID',
+  })
+  getGoogleConfig(): { enabled: boolean; clientId: string | null } {
+    return this.authService.getGoogleConfig();
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Authenticate or register via Google Sign-In',
+    description:
+      'Verifies Google OAuth2 access token or ID token server-side, sets HttpOnly session cookie, and returns JWT credentials',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Google authentication successful',
+    type: AuthResponseDto,
+  })
+  async googleLogin(
+    @Body() dto: GoogleAuthDto,
+    @Res({ passthrough: true }) res?: Response,
+  ): Promise<AuthResponseDto> {
+    const auth = await this.authService.authenticateWithGoogle(dto);
     this.setAuthCookie(res, auth.accessToken);
     return auth;
   }

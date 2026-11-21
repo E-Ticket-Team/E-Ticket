@@ -1,6 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarDays, Plus, RotateCcw, Search } from 'lucide-react';
+import { CalendarDays, Plus, RotateCcw, Search, SlidersHorizontal } from 'lucide-react';
+import { useGSAP } from '../animations/gsap';
+import { runStaggerScrollReveal } from '../animations/scroll-reveals';
 import { useAuth } from '../hooks/useAuth';
 import { ApiError } from '../services/api';
 import { eventsService } from '../services/events.service';
@@ -15,6 +17,7 @@ import { EventCardSkeletonGrid } from '../components/common/Skeleton';
 export function EventsPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   const [events, setEvents] = useState<EventItem[]>([]);
   const [meta, setMeta] = useState<PaginationMeta>({
@@ -26,6 +29,7 @@ export function EventsPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filtersVisible, setFiltersVisible] = useState(true);
 
   const [searchInput, setSearchInput] = useState(searchParams.get('search') ?? '');
   const search = searchParams.get('search') ?? '';
@@ -78,6 +82,15 @@ export function EventsPage() {
     };
   }, [page, search, category, status, startAfter, sortOrder]);
 
+  useGSAP(
+    () => {
+      if (!loading && events.length > 0) {
+        runStaggerScrollReveal('.event-card', gridRef.current);
+      }
+    },
+    { dependencies: [loading, events], scope: gridRef },
+  );
+
   function updateFilter(patch: Record<string, string | null>) {
     const next = new URLSearchParams(searchParams);
     Object.entries(patch).forEach(([k, v]) => {
@@ -106,91 +119,107 @@ export function EventsPage() {
     <div>
       <PageHeader
         title="Events Directory"
-        subtitle="Discover published concerts, conferences, workshops, and live experiences."
+        subtitle="Explore upcoming concerts, conferences, workshops, and signature experiences."
         actions={
-          canCreateEvent ? (
-            <Link to="/organizer/events/new" className="btn btn-primary">
-              <Plus size={17} />
-              <span>Create Event</span>
-            </Link>
-          ) : undefined
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setFiltersVisible((v) => !v)}
+            >
+              <SlidersHorizontal size={16} />
+              <span>{filtersVisible ? 'Hide Filters' : 'Filters'}</span>
+            </button>
+            {canCreateEvent && (
+              <Link to="/organizer/events/new" className="btn btn-primary">
+                <Plus size={17} />
+                <span>Create Event</span>
+              </Link>
+            )}
+          </>
         }
       />
 
-      <form onSubmit={handleSearchSubmit} className="filter-bar">
-        <div className="search-input-wrap">
-          <Search size={16} className="search-icon" />
-          <input
-            type="text"
-            className="input"
-            placeholder="Search by event title, venue, city, or description..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            aria-label="Search events"
-          />
-        </div>
+      {filtersVisible && (
+        <form onSubmit={handleSearchSubmit} className="filter-bar">
+          <div className="search-input-wrap">
+            <Search size={16} className="search-icon" />
+            <input
+              type="text"
+              className="input"
+              placeholder="Search by event title, venue, city, or description..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              aria-label="Search events"
+            />
+          </div>
 
-        <div style={{ minWidth: 170 }}>
-          <select
-            className="select"
-            aria-label="Filter by category"
-            value={category}
-            onChange={(e) => updateFilter({ category: e.target.value })}
-          >
-            <option value="ALL">All Categories</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div style={{ minWidth: 170 }}>
+            <select
+              className="select"
+              aria-label="Filter by category"
+              value={category}
+              onChange={(e) => updateFilter({ category: e.target.value })}
+            >
+              <option value="ALL">All Categories</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div style={{ minWidth: 155 }}>
-          <select
-            className="select"
-            aria-label="Filter by status"
-            value={status}
-            onChange={(e) => updateFilter({ status: e.target.value })}
-          >
-            <option value="PUBLISHED">Upcoming / Live</option>
-            <option value="COMPLETED">Past / Completed</option>
-          </select>
-        </div>
+          <div style={{ minWidth: 155 }}>
+            <select
+              className="select"
+              aria-label="Filter by status"
+              value={status}
+              onChange={(e) => updateFilter({ status: e.target.value })}
+            >
+              <option value="PUBLISHED">Upcoming / Live</option>
+              <option value="COMPLETED">Past / Completed</option>
+            </select>
+          </div>
 
-        <div style={{ minWidth: 155 }}>
-          <input
-            type="date"
-            className="input"
-            aria-label="Starting on or after"
-            value={startAfter}
-            onChange={(e) => updateFilter({ startAfter: e.target.value || null })}
-          />
-        </div>
+          <div style={{ minWidth: 155 }}>
+            <input
+              type="date"
+              className="input"
+              aria-label="Starting on or after"
+              value={startAfter}
+              onChange={(e) => updateFilter({ startAfter: e.target.value || null })}
+            />
+          </div>
 
-        <div style={{ minWidth: 160 }}>
-          <select
-            className="select"
-            aria-label="Sort by date"
-            value={sortOrder}
-            onChange={(e) => updateFilter({ sortOrder: e.target.value })}
-          >
-            <option value="asc">Soonest First</option>
-            <option value="desc">Latest First</option>
-          </select>
-        </div>
+          <div style={{ minWidth: 160 }}>
+            <select
+              className="select"
+              aria-label="Sort by date"
+              value={sortOrder}
+              onChange={(e) => updateFilter({ sortOrder: e.target.value })}
+            >
+              <option value="asc">Soonest First</option>
+              <option value="desc">Latest First</option>
+            </select>
+          </div>
 
-        <button type="submit" className="btn btn-primary">
-          Apply
-        </button>
-
-        {(search || category !== 'ALL' || status !== 'PUBLISHED' || startAfter || sortOrder !== 'asc') && (
-          <button type="button" className="btn btn-secondary" onClick={resetFilters}>
-            <RotateCcw size={15} />
-            <span>Reset</span>
+          <button type="submit" className="btn btn-primary">
+            Search
           </button>
-        )}
-      </form>
+
+          {(search ||
+            category !== 'ALL' ||
+            status !== 'PUBLISHED' ||
+            startAfter ||
+            sortOrder !== 'asc') && (
+            <button type="button" className="btn btn-secondary" onClick={resetFilters}>
+              <RotateCcw size={15} />
+              <span>Reset</span>
+            </button>
+          )}
+        </form>
+      )}
 
       {error && <AlertBanner variant="error" title="Could not load events" message={error} />}
 
@@ -208,7 +237,7 @@ export function EventsPage() {
           }
         />
       ) : (
-        <>
+        <div ref={gridRef}>
           <div className="grid-3">
             {events.map((event) => (
               <EventCard key={event.id} event={event} />
@@ -219,7 +248,7 @@ export function EventsPage() {
             meta={meta}
             onPageChange={(nextPage) => updateFilter({ page: String(nextPage) })}
           />
-        </>
+        </div>
       )}
     </div>
   );

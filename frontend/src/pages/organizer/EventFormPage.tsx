@@ -289,7 +289,7 @@ export function EventFormPage() {
         {error && <AlertBanner variant="error" title="Could not save event" message={error} />}
 
         {loading ? (
-          <div className="card card-padded" style={{ color: 'var(--text-muted)' }}>
+          <div className="card card-padded" style={{ color: 'var(--color-text-muted)' }}>
             Loading event editor...
           </div>
         ) : (
@@ -449,7 +449,7 @@ export function EventFormPage() {
                 <aside className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Layers size={18} color="var(--brand-primary)" />
+                      <Layers size={18} color="var(--color-primary)" />
                       <h2 style={{ fontSize: '1.12rem', fontWeight: 700 }}>Ticket Tiers</h2>
                     </div>
                     <span className="badge">{tiers.length}</span>
@@ -508,17 +508,17 @@ export function EventFormPage() {
                               <>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                                   <strong style={{ fontSize: '0.95rem' }}>{t.name}</strong>
-                                  <span style={{ fontWeight: 800, color: 'var(--brand-primary)' }}>
+                                  <span className="tabular-nums" style={{ fontWeight: 800, color: 'var(--color-primary)' }}>
                                     {formatCurrency(t.price)}
                                   </span>
                                 </div>
                                 {t.description && (
-                                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                                  <div style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
                                     {t.description}
                                   </div>
                                 )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                  <span className="tabular-nums" style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                                     {t.remainingQuantity} / {t.totalQuantity} remaining
                                   </span>
                                   <div style={{ display: 'flex', gap: 6 }}>
@@ -602,7 +602,7 @@ export function EventFormPage() {
 
                 <aside className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <QrCode size={18} color="var(--brand-primary)" />
+                    <QrCode size={18} color="var(--color-primary)" />
                     <h2 style={{ fontSize: '1.12rem', fontWeight: 700 }}>Authorized Gate Scanners</h2>
                   </div>
 
@@ -624,7 +624,7 @@ export function EventFormPage() {
                   </form>
 
                   {scanners.length === 0 ? (
-                    <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '0.84rem', color: 'var(--color-text-muted)' }}>
                       No dedicated SCANNER accounts assigned yet (you can still scan your own event).
                     </div>
                   ) : (
@@ -637,9 +637,9 @@ export function EventFormPage() {
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             padding: '8px 12px',
-                            backgroundColor: 'var(--bg-subtle)',
+                            backgroundColor: 'var(--color-ivory)',
                             borderRadius: 'var(--radius-sm)',
-                            border: '1px solid var(--border-color)',
+                            border: '1px solid var(--color-border)',
                           }}
                         >
                           <div style={{ fontSize: '0.85rem' }}>

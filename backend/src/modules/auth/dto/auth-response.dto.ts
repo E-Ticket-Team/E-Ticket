@@ -20,6 +20,9 @@ export class UserProfileDto {
   @ApiPropertyOptional({ example: '+85598765432' })
   phoneNumber?: string;
 
+  @ApiPropertyOptional({ example: 'https://lh3.googleusercontent.com/a/...' })
+  avatarUrl?: string;
+
   @ApiProperty({ enum: Role, example: Role.ORGANIZER })
   role: Role;
 

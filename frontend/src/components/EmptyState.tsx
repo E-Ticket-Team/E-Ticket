@@ -15,9 +15,9 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
           width: 52,
           height: 52,
           borderRadius: 12,
-          backgroundColor: 'var(--bg-subtle)',
-          border: '1px solid var(--border-color)',
-          color: 'var(--brand-primary)',
+          backgroundColor: 'var(--color-primary-light)',
+          border: '1px solid var(--color-primary-soft)',
+          color: 'var(--color-primary)',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -27,7 +27,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
         {icon}
       </div>
       <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: 6 }}>{title}</h3>
-      <p style={{ color: 'var(--text-muted)', maxWidth: 440, margin: '0 auto 18px', fontSize: '0.93rem' }}>
+      <p style={{ color: 'var(--color-text-muted)', maxWidth: 440, margin: '0 auto 18px', fontSize: '0.93rem' }}>
         {description}
       </p>
       {action}

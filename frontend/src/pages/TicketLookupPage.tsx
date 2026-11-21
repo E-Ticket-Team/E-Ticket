@@ -87,7 +87,7 @@ export function TicketLookupPage() {
       {error && <AlertBanner variant="error" title="Ticket Unavailable" message={error} />}
 
       {loading ? (
-        <div className="card card-padded" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+        <div className="card card-padded" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
           Retrieving ticket pass...
         </div>
       ) : ticket ? (

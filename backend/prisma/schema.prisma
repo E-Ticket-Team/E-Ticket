@@ -50,7 +50,9 @@ enum PaymentStatus {
 model User {
   id               String   @id @default(uuid())
   email            String   @unique
-  password         String
+  password         String?
+  googleId         String?  @unique
+  avatarUrl        String?
   firstName        String?
   lastName         String?
   organizationName String?

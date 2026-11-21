@@ -203,7 +203,7 @@ export function OrganizerAttendeesPage({
                       <div style={{ fontWeight: 600 }}>
                         {formatPersonName(t.order?.user)}
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                         {t.order?.user?.email}
                       </div>
                     </td>
@@ -211,15 +211,15 @@ export function OrganizerAttendeesPage({
                     <td>
                       <StatusBadge status={t.status} />
                     </td>
-                    <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    <td className="tabular-nums" style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
                       {formatDateTime(t.createdAt)}
                     </td>
-                    <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    <td className="tabular-nums" style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
                       {t.usedAt ? (
                         <div>
                           <div>{formatDateTime(t.usedAt)}</div>
                           {t.checkedInBy && (
-                            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)' }}>
                               By {t.checkedInBy.email}
                             </div>
                           )}

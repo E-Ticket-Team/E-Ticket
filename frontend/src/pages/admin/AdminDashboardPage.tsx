@@ -3,6 +3,7 @@ import {
   CalendarDays,
   DollarSign,
   Receipt,
+  RefreshCw,
   ShieldCheck,
   Ticket,
   Users,
@@ -20,10 +21,12 @@ import type {
 } from '../../types/api';
 import { formatCurrency, formatDateTime, formatPersonName } from '../../utils/format';
 import { AlertBanner } from '../../components/AlertBanner';
+import { EmptyState } from '../../components/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Skeleton } from '../../components/common/Skeleton';
 import { StatCard } from '../../components/common/StatCard';
+import { AnalyticsChart } from '../../components/dashboard/AnalyticsChart';
 
 type AdminTab = 'overview' | 'users' | 'orders' | 'tickets';
 
@@ -145,6 +148,17 @@ export function AdminDashboardPage() {
         <PageHeader
           title="Platform Administration"
           subtitle="Manage platform accounts, roles, orders, and issued ticket integrity."
+          actions={
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={loadAll}
+              disabled={loading}
+            >
+              <RefreshCw size={15} />
+              <span>{loading ? 'Refreshing...' : 'Refresh Console'}</span>
+            </button>
+          }
         />
 
         {error && <AlertBanner variant="error" message={error} />}
@@ -154,7 +168,7 @@ export function AdminDashboardPage() {
         ) : (
           <>
             {tab === 'overview' && overview && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
                 <div className="kpi-grid" style={{ marginBottom: 0 }}>
                   <StatCard
                     label="Total Users"
@@ -184,6 +198,65 @@ export function AdminDashboardPage() {
                     tone="warning"
                   />
                 </div>
+
+                <div className="metrics-strip">
+                  <div className="metric-item">
+                    <div className="metric-value tabular-nums">
+                      {overview.events.total > 0
+                        ? `${Math.round((overview.events.published / overview.events.total) * 100)}%`
+                        : '0%'}
+                    </div>
+                    <div className="metric-label">Published Event Ratio</div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-value tabular-nums">
+                      {overview.orders.total > 0
+                        ? `${Math.round((overview.orders.paid / overview.orders.total) * 100)}%`
+                        : '0%'}
+                    </div>
+                    <div className="metric-label">Order Settlement Rate</div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-value tabular-nums">
+                      {overview.tickets.totalIssued > 0
+                        ? `${Math.round((overview.tickets.checkedIn / overview.tickets.totalIssued) * 100)}%`
+                        : '0%'}
+                    </div>
+                    <div className="metric-label">Gate Check-In Rate</div>
+                  </div>
+                  <div className="metric-item">
+                    <div className="metric-value tabular-nums">
+                      {overview.orders.total}
+                    </div>
+                    <div className="metric-label">Recorded Platform Orders</div>
+                  </div>
+                </div>
+
+                <div className="grid-2">
+                  <AnalyticsChart
+                    title="Account Role Distribution"
+                    subtitle="Registered users grouped by platform access role"
+                    points={[
+                      { label: 'CUSTOMER', value: overview.users.byRole.CUSTOMER ?? 0 },
+                      { label: 'ORGANIZER', value: overview.users.byRole.ORGANIZER ?? 0 },
+                      { label: 'SCANNER', value: overview.users.byRole.SCANNER ?? 0 },
+                      { label: 'ADMIN', value: overview.users.byRole.ADMIN ?? 0 },
+                    ]}
+                    emptyMessage="No registered user roles yet."
+                  />
+
+                  <AnalyticsChart
+                    title="Platform Activity Snapshot"
+                    subtitle="Published listings, paid orders, issued passes, and scans"
+                    points={[
+                      { label: 'Published', value: overview.events.published },
+                      { label: 'Paid Orders', value: overview.orders.paid },
+                      { label: 'Tickets', value: overview.tickets.totalIssued },
+                      { label: 'Checked In', value: overview.tickets.checkedIn },
+                    ]}
+                    emptyMessage="No platform volume recorded yet."
+                  />
+                </div>
               </div>
             )}
 
@@ -211,6 +284,13 @@ export function AdminDashboardPage() {
                   </select>
                 </div>
 
+                {users.length === 0 ? (
+                  <EmptyState
+                    icon={<Users size={24} />}
+                    title="No matching accounts"
+                    description="Try clearing the search query or switching the role filter."
+                  />
+                ) : (
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -229,7 +309,7 @@ export function AdminDashboardPage() {
                           <tr key={u.id}>
                             <td>
                               <div style={{ fontWeight: 700 }}>{formatPersonName(u)}</div>
-                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
                                 {u.email}
                               </div>
                             </td>
@@ -251,7 +331,7 @@ export function AdminDashboardPage() {
                             <td>
                               <StatusBadge status={u.isActive ? 'ACTIVE' : 'SUSPENDED'} />
                             </td>
-                            <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                            <td className="tabular-nums" style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
                               {u._count?.events ?? 0} events · {u._count?.orders ?? 0} orders
                             </td>
                             <td style={{ textAlign: 'right' }}>
@@ -270,10 +350,18 @@ export function AdminDashboardPage() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </div>
             )}
 
             {tab === 'orders' && (
+              orders.length === 0 ? (
+                <EmptyState
+                  icon={<Receipt size={24} />}
+                  title="No platform orders recorded"
+                  description="Customer ticket orders will populate here once checkout activity begins."
+                />
+              ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -294,21 +382,31 @@ export function AdminDashboardPage() {
                           </span>
                         </td>
                         <td>{o.user?.email}</td>
-                        <td>
+                        <td className="tabular-nums">
                           <strong>{formatCurrency(o.totalAmount)}</strong>
                         </td>
                         <td>
                           <StatusBadge status={o.status} />
                         </td>
-                        <td style={{ fontSize: '0.82rem' }}>{formatDateTime(o.createdAt)}</td>
+                        <td className="tabular-nums" style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
+                          {formatDateTime(o.createdAt)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              )
             )}
 
             {tab === 'tickets' && (
+              tickets.length === 0 ? (
+                <EmptyState
+                  icon={<Ticket size={24} />}
+                  title="No issued tickets yet"
+                  description="Digital passes issued from paid orders will appear here."
+                />
+              ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -339,6 +437,7 @@ export function AdminDashboardPage() {
                   </tbody>
                 </table>
               </div>
+              )
             )}
           </>
         )}

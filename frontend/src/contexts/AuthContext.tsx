@@ -9,6 +9,7 @@ import {
 import { setUnauthorizedHandler } from '../services/api';
 import {
   authService,
+  type GoogleLoginPayload,
   type LoginPayload,
   type RegisterCustomerPayload,
   type RegisterOrganizationPayload,
@@ -21,6 +22,7 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   sessionExpired: boolean;
   login: (payload: LoginPayload) => Promise<UserProfile>;
+  googleLogin: (payload: GoogleLoginPayload) => Promise<UserProfile>;
   registerCustomer: (payload: RegisterCustomerPayload) => Promise<UserProfile>;
   registerOrganization: (
     payload: RegisterOrganizationPayload,
@@ -72,6 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.user;
   }, []);
 
+  const googleLogin = useCallback(async (payload: GoogleLoginPayload) => {
+    const res = await authService.googleLogin(payload);
+    setUser(res.user);
+    setSessionExpired(false);
+    return res.user;
+  }, []);
+
   const registerCustomer = useCallback(
     async (payload: RegisterCustomerPayload) => {
       const res = await authService.registerCustomer(payload);
@@ -110,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(user),
       sessionExpired,
       login,
+      googleLogin,
       registerCustomer,
       registerOrganization,
       logout,
@@ -121,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       sessionExpired,
       login,
+      googleLogin,
       registerCustomer,
       registerOrganization,
       logout,

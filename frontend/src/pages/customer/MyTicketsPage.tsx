@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarDays, Ticket } from 'lucide-react';
+import { useGSAP } from '../../animations/gsap';
+import { runStaggerScrollReveal } from '../../animations/scroll-reveals';
 import { ApiError } from '../../services/api';
 import { ticketsService } from '../../services/tickets.service';
 import type { TicketDetail } from '../../types/api';
@@ -11,6 +13,7 @@ import { PageHeader } from '../../components/common/PageHeader';
 import { Skeleton } from '../../components/common/Skeleton';
 
 export function MyTicketsPage() {
+  const listRef = useRef<HTMLDivElement | null>(null);
   const [tickets, setTickets] = useState<TicketDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,11 +48,20 @@ export function MyTicketsPage() {
     return tickets.filter((t) => t.status === statusFilter);
   }, [tickets, statusFilter]);
 
+  useGSAP(
+    () => {
+      if (!loading && visibleTickets.length > 0) {
+        runStaggerScrollReveal('.ticket-pass', listRef.current);
+      }
+    },
+    { dependencies: [loading, visibleTickets], scope: listRef },
+  );
+
   return (
     <div>
       <PageHeader
         title="My Ticket Wallet"
-        subtitle="Access your verified digital QR passes ready for gate scanning, printing, or download."
+        subtitle="Your digital boarding passes—ready for full-screen gate presentation, SVG download, or printing."
         actions={
           <div className="no-print" style={{ display: 'flex', gap: 10 }}>
             <select
@@ -58,14 +70,14 @@ export function MyTicketsPage() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="ALL">All Statuses ({tickets.length})</option>
+              <option value="ALL">All Passes ({tickets.length})</option>
               <option value="VALID">VALID</option>
               <option value="USED">USED</option>
               <option value="CANCELLED">CANCELLED</option>
             </select>
             <Link to="/events" className="btn btn-primary">
               <CalendarDays size={16} />
-              <span>Browse Events</span>
+              <span>Explore Events</span>
             </Link>
           </div>
         }
@@ -94,7 +106,7 @@ export function MyTicketsPage() {
           }
         />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div ref={listRef} style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
           {visibleTickets.map((ticket) => (
             <TicketPassCard key={ticket.id} ticket={ticket} />
           ))}

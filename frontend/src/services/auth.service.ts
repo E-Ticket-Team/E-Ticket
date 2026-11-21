@@ -1,9 +1,16 @@
-import type { AuthResponse, UserProfile } from '../types/api';
+import type { AuthResponse, GoogleAuthConfig, UserProfile } from '../types/api';
 import { API_V1, apiRequest } from './api';
 
 export interface LoginPayload {
   email: string;
   password: string;
+}
+
+export interface GoogleLoginPayload {
+  credential?: string;
+  accessToken?: string;
+  accountType?: 'CUSTOMER' | 'ORGANIZER';
+  organizationName?: string;
 }
 
 export interface RegisterCustomerPayload {
@@ -26,6 +33,20 @@ export interface RegisterOrganizationPayload {
 export const authService = {
   login(payload: LoginPayload): Promise<AuthResponse> {
     return apiRequest<AuthResponse>(`${API_V1}/auth/login`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      skipUnauthorizedCallback: true,
+    });
+  },
+
+  getGoogleConfig(): Promise<GoogleAuthConfig> {
+    return apiRequest<GoogleAuthConfig>(`${API_V1}/auth/google/config`, {
+      skipUnauthorizedCallback: true,
+    });
+  },
+
+  googleLogin(payload: GoogleLoginPayload): Promise<AuthResponse> {
+    return apiRequest<AuthResponse>(`${API_V1}/auth/google`, {
       method: 'POST',
       body: JSON.stringify(payload),
       skipUnauthorizedCallback: true,

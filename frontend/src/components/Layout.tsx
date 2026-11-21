@@ -1,46 +1,31 @@
-import { useEffect, useState } from 'react';
-import { Link, Outlet } from 'react-router-dom';
+import { useRef } from 'react';
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useGSAP } from '../animations/gsap';
+import { runPageEntrance } from '../animations/page-animations';
 import { useAuth } from '../hooks/useAuth';
-import { healthApi } from '../services/api';
-import type { HealthResponse } from '../types/api';
 import { AlertBanner } from './AlertBanner';
 import { Footer } from './Footer';
 import { Navbar } from './Navbar';
 
 export function Layout() {
   const { sessionExpired, clearSessionExpired } = useAuth();
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthLoading, setHealthLoading] = useState(true);
+  const location = useLocation();
+  const routeContainerRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    let active = true;
-
-    async function checkHealth() {
-      try {
-        const res = await healthApi.getHealth();
-        if (active) setHealth(res);
-      } catch {
-        if (active) setHealth(null);
-      } finally {
-        if (active) setHealthLoading(false);
-      }
-    }
-
-    checkHealth();
-    const timer = window.setInterval(checkHealth, 30000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, []);
+  useGSAP(
+    () => {
+      runPageEntrance(routeContainerRef.current);
+    },
+    { dependencies: [location.pathname], scope: routeContainerRef },
+  );
 
   return (
     <div className="app-shell">
-      <Navbar health={health} healthLoading={healthLoading} />
+      <Navbar />
       <main className="main-content">
         <div className="container">
           {sessionExpired && (
-            <div style={{ marginBottom: 20 }}>
+            <div style={{ marginBottom: 22 }}>
               <AlertBanner
                 variant="warning"
                 title="Session Expired"
@@ -56,7 +41,7 @@ export function Layout() {
               </div>
             </div>
           )}
-          <div className="page-transition">
+          <div ref={routeContainerRef}>
             <Outlet />
           </div>
         </div>

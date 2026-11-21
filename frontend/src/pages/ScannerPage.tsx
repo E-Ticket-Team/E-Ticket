@@ -1,11 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  CheckCircle2,
-  QrCode,
-  ShieldAlert,
-  Trash2,
-} from 'lucide-react';
+import { CheckCircle2, QrCode, ShieldAlert, Trash2 } from 'lucide-react';
+import { animatePanelEnter } from '../animations/transitions';
 import { ApiError } from '../services/api';
 import { ticketsService } from '../services/tickets.service';
 import type { EventItem, TicketDetail } from '../types/api';
@@ -27,6 +23,7 @@ interface ScanHistoryEntry {
 export function ScannerPage() {
   const [searchParams] = useSearchParams();
   const initialCode = searchParams.get('code') ?? '';
+  const resultRef = useRef<HTMLDivElement | null>(null);
 
   const [authorizedEvents, setAuthorizedEvents] = useState<
     Array<Pick<EventItem, 'id' | 'title' | 'venue' | 'status'>>
@@ -82,7 +79,7 @@ export function ScannerPage() {
       );
       setResultState({
         kind: 'success',
-        title: 'ENTRY APPROVED — TICKET CHECKED IN',
+        title: 'ENTRY APPROVED — TICKET VALID',
         message: `${res.message} · Check-in recorded at ${formatDateTime(res.ticket.usedAt)}`,
         ticket: res.ticket,
       });
@@ -96,6 +93,7 @@ export function ScannerPage() {
         },
         ...prev,
       ]);
+      window.setTimeout(() => animatePanelEnter(resultRef.current), 10);
     } catch (err) {
       const apiErr = err instanceof ApiError ? err : null;
       const isConflict = apiErr?.statusCode === 409;
@@ -103,8 +101,8 @@ export function ScannerPage() {
       setResultState({
         kind: isConflict ? 'conflict' : 'error',
         title: isConflict
-          ? 'DUPLICATE ENTRY BLOCKED (ALREADY USED)'
-          : 'TICKET REJECTED / INVALID',
+          ? 'ALREADY USED — DUPLICATE ENTRY BLOCKED'
+          : 'REJECTED — INVALID OR CANCELLED TICKET',
         message,
       });
       setHistory((prev) => [
@@ -117,6 +115,7 @@ export function ScannerPage() {
         },
         ...prev,
       ]);
+      window.setTimeout(() => animatePanelEnter(resultRef.current), 10);
     } finally {
       setSubmitting(false);
     }
@@ -130,8 +129,8 @@ export function ScannerPage() {
   return (
     <div>
       <PageHeader
-        title="Gate Check-In Scanner"
-        subtitle="Verify QR credentials against the backend database in real time and block duplicate entry."
+        title="Gate Check-In Terminal"
+        subtitle="Rapid camera and manual verification backed by atomic single-entry PostgreSQL locks."
       />
 
       {eventsError && <AlertBanner variant="warning" message={eventsError} />}
@@ -144,11 +143,43 @@ export function ScannerPage() {
         />
       )}
 
-      <div className="grid-2" style={{ alignItems: 'start', marginBottom: 24 }}>
+      {resultState && (
+        <div ref={resultRef} style={{ marginBottom: 24 }}>
+          <div
+            className={`alert ${
+              resultState.kind === 'success'
+                ? 'alert-success'
+                : resultState.kind === 'conflict'
+                  ? 'alert-warning'
+                  : 'alert-error'
+            }`}
+            style={{ padding: '20px 22px', borderWidth: 2 }}
+            role="status"
+          >
+            {resultState.kind === 'success' ? (
+              <CheckCircle2 size={26} style={{ flexShrink: 0, marginTop: 2 }} />
+            ) : (
+              <ShieldAlert size={26} style={{ flexShrink: 0, marginTop: 2 }} />
+            )}
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '1.15rem', marginBottom: 4 }}>
+                {resultState.title}
+              </div>
+              <div style={{ fontSize: '0.96rem' }}>{resultState.message}</div>
+            </div>
+          </div>
+
+          {resultState.ticket && (
+            <TicketPassCard ticket={resultState.ticket} showActions={false} />
+          )}
+        </div>
+      )}
+
+      <div className="grid-2" style={{ alignItems: 'start' }}>
         <div className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <QrCode size={20} color="var(--brand-primary)" />
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Gate Scan Terminal</h2>
+            <QrCode size={20} color="var(--color-primary)" />
+            <h2 className="card-title">Scan or Enter Ticket Code</h2>
           </div>
 
           <div className="input-group">
@@ -181,6 +212,7 @@ export function ScannerPage() {
                 id="scanner-code-input"
                 type="text"
                 className="input"
+                style={{ height: 48, fontSize: '1rem' }}
                 placeholder="Paste ETK1... QR payload or enter TKT-..."
                 value={ticketCode}
                 onChange={(e) => setTicketCode(e.target.value)}
@@ -195,8 +227,8 @@ export function ScannerPage() {
                 disabled={submitting || !ticketCode.trim()}
                 style={{ flex: 1 }}
               >
-                <CheckCircle2 size={17} />
-                <span>{submitting ? 'Verifying with Server...' : 'Validate & Check In'}</span>
+                <CheckCircle2 size={18} />
+                <span>{submitting ? 'Verifying...' : 'Validate & Check In'}</span>
               </button>
 
               {ticketCode.trim() && (
@@ -221,9 +253,9 @@ export function ScannerPage() {
             }}
           >
             <div>
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Session Check-In Log</h2>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Local UI log only — backend database enforces authoritative validity.
+              <h2 className="card-title">Session Scan History</h2>
+              <p style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                Local UI log only — PostgreSQL enforces authoritative validity.
               </p>
             </div>
             {history.length > 0 && (
@@ -239,16 +271,16 @@ export function ScannerPage() {
           </div>
 
           {history.length === 0 ? (
-            <div className="chart-empty">No tickets scanned in this browser session yet.</div>
+            <div className="chart-empty">No tickets scanned in this session yet.</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 400, overflowY: 'auto' }}>
               {history.map((item) => (
                 <div
                   key={item.id}
                   style={{
-                    backgroundColor: 'var(--bg-subtle)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'var(--color-ivory)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
                     padding: '12px 14px',
                   }}
                 >
@@ -274,10 +306,10 @@ export function ScannerPage() {
                       }
                     />
                   </div>
-                  <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+                  <div style={{ fontSize: '0.84rem', color: 'var(--color-text-secondary)' }}>
                     {item.message}
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', marginTop: 4 }}>
                     {formatDateTime(item.scannedAt)}
                   </div>
                 </div>
@@ -286,37 +318,6 @@ export function ScannerPage() {
           )}
         </div>
       </div>
-
-      {resultState && (
-        <div>
-          <div
-            className={`alert ${
-              resultState.kind === 'success'
-                ? 'alert-success'
-                : resultState.kind === 'conflict'
-                  ? 'alert-warning'
-                  : 'alert-error'
-            }`}
-            role="status"
-          >
-            {resultState.kind === 'success' ? (
-              <CheckCircle2 size={22} style={{ flexShrink: 0, marginTop: 2 }} />
-            ) : (
-              <ShieldAlert size={22} style={{ flexShrink: 0, marginTop: 2 }} />
-            )}
-            <div>
-              <div style={{ fontWeight: 800, fontSize: '1.06rem', marginBottom: 4 }}>
-                {resultState.title}
-              </div>
-              <div style={{ fontSize: '0.94rem' }}>{resultState.message}</div>
-            </div>
-          </div>
-
-          {resultState.ticket && (
-            <TicketPassCard ticket={resultState.ticket} showActions={false} />
-          )}
-        </div>
-      )}
     </div>
   );
 }

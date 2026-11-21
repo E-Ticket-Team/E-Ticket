@@ -12,10 +12,16 @@ export interface UserProfile {
   lastName?: string | null;
   organizationName?: string | null;
   phoneNumber?: string | null;
+  avatarUrl?: string | null;
   role: Role;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GoogleAuthConfig {
+  enabled: boolean;
+  clientId: string | null;
 }
 
 export interface AuthResponse {

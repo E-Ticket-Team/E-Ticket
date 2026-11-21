@@ -13,6 +13,10 @@ export interface OrderConfig {
   reservationMinutes: number;
 }
 
+export interface GoogleConfig {
+  clientId: string;
+}
+
 export interface AppConfig {
   nodeEnv: string;
   port: number;
@@ -21,6 +25,7 @@ export interface AppConfig {
   database: DatabaseConfig;
   jwt: JwtConfig;
   orders: OrderConfig;
+  google: GoogleConfig;
 }
 
 export default (): AppConfig => {
@@ -46,6 +51,9 @@ export default (): AppConfig => {
     orders: {
       reservationMinutes:
         parseInt(process.env.ORDER_RESERVATION_MINUTES, 10) || 15,
+    },
+    google: {
+      clientId: (process.env.GOOGLE_CLIENT_ID || '').trim(),
     },
   };
 };

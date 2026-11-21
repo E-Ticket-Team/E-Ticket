@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   XCircle,
 } from 'lucide-react';
+import { animatePanelEnter } from '../../animations/transitions';
 import { useToast } from '../../contexts/ToastContext';
 import { ApiError } from '../../services/api';
 import { ordersService } from '../../services/orders.service';
@@ -34,6 +35,7 @@ function formatCountdown(msRemaining: number): string {
 export function CheckoutPage() {
   const { orderId } = useParams<{ orderId: string }>();
   const { showToast } = useToast();
+  const confirmationRef = useRef<HTMLDivElement | null>(null);
 
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,12 +91,12 @@ export function CheckoutPage() {
 
       if (result.payment.status === 'SUCCEEDED') {
         showToast('Payment confirmed and QR passes issued!', { variant: 'success' });
+        window.setTimeout(() => animatePanelEnter(confirmationRef.current), 20);
       } else {
         setPayError(
           result.payment.failureReason ||
             'Simulated payment declined. You may retry before your reservation expires.',
         );
-        // Generate a fresh key for a subsequent retry after an intentional failure
         setIdempotencyKey(`pay-${order.id}-${crypto.randomUUID()}`);
       }
     } catch (err) {
@@ -148,22 +150,42 @@ export function CheckoutPage() {
     ? new Date(order.expiresAt).getTime() - nowMs
     : 0;
   const reservationExpired =
-    order.status === 'EXPIRED' || (order.status === 'PENDING' && Boolean(order.expiresAt) && msRemaining <= 0);
+    order.status === 'EXPIRED' ||
+    (order.status === 'PENDING' && Boolean(order.expiresAt) && msRemaining <= 0);
+
+  const isPaid = order.status === 'PAID';
 
   return (
     <div>
       <PageHeader
-        title="Checkout & Payment Verification"
+        title="Secure Checkout"
         subtitle={`Order Reference: ${order.id}`}
         actions={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <StatusBadge status={reservationExpired && order.status === 'PENDING' ? 'EXPIRED' : order.status} />
+            <StatusBadge
+              status={reservationExpired && order.status === 'PENDING' ? 'EXPIRED' : order.status}
+            />
             <Link to="/my-account" className="btn btn-secondary btn-sm">
               My Orders
             </Link>
           </div>
         }
       />
+
+      <div className="checkout-stepper">
+        <div className="checkout-step done">
+          <CheckCircle2 size={16} color="var(--color-primary)" />
+          <span>1. Reservation Locked</span>
+        </div>
+        <div className={`checkout-step ${isPaid ? 'done' : 'active'}`}>
+          <CreditCard size={16} color="var(--color-primary)" />
+          <span>2. Backend Payment Verification</span>
+        </div>
+        <div className={`checkout-step ${isPaid ? 'done' : ''}`}>
+          <QrCode size={16} color={isPaid ? 'var(--color-primary)' : 'var(--color-text-muted)'} />
+          <span>3. QR Passes Issued</span>
+        </div>
+      </div>
 
       {order.status === 'PENDING' && order.expiresAt && !reservationExpired && (
         <div className="alert alert-info">
@@ -187,8 +209,8 @@ export function CheckoutPage() {
 
       {payError && <AlertBanner variant="error" title="Payment Notice" message={payError} />}
 
-      {order.status === 'PAID' && (
-        <div className="alert alert-success">
+      {isPaid && (
+        <div ref={confirmationRef} className="alert alert-success">
           <CheckCircle2 size={20} style={{ flexShrink: 0, marginTop: 2 }} />
           <div>
             <strong>Payment Verified &amp; Tickets Issued</strong>
@@ -202,7 +224,7 @@ export function CheckoutPage() {
 
       <div className="detail-grid">
         <div className="card card-padded">
-          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: 14 }}>
+          <h2 className="card-title" style={{ marginBottom: 14 }}>
             Order Summary
           </h2>
 
@@ -212,11 +234,11 @@ export function CheckoutPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                   <div>
                     <div style={{ fontWeight: 700 }}>{item.ticketType.event.title}</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
                       {item.ticketType.name} × {item.quantity} ({formatCurrency(item.unitPrice)} each)
                     </div>
                   </div>
-                  <strong style={{ color: 'var(--brand-primary)' }}>
+                  <strong style={{ color: 'var(--color-primary)' }}>
                     {formatCurrency(item.subtotal)}
                   </strong>
                 </div>
@@ -228,14 +250,14 @@ export function CheckoutPage() {
             style={{
               marginTop: 18,
               paddingTop: 14,
-              borderTop: '1px solid var(--border-color)',
+              borderTop: '1px solid var(--color-border)',
               display: 'flex',
               justifyContent: 'space-between',
               fontSize: '1.15rem',
             }}
           >
             <strong>Total Amount</strong>
-            <strong style={{ color: 'var(--brand-primary)' }}>
+            <strong style={{ color: 'var(--color-primary)' }}>
               {formatCurrency(order.totalAmount)} {order.currency}
             </strong>
           </div>
@@ -243,19 +265,19 @@ export function CheckoutPage() {
 
         <aside className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <CreditCard size={18} color="var(--brand-primary)" />
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Payment Method</h2>
+            <CreditCard size={18} color="var(--color-primary)" />
+            <h2 className="card-title">Payment Method</h2>
           </div>
 
           {order.status === 'PENDING' && !reservationExpired ? (
             <>
-              <div className="tier-card" style={{ borderColor: 'var(--brand-soft-border)' }}>
+              <div className="tier-card selected">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <strong style={{ fontSize: '0.95rem' }}>Development Mock Payment Provider</strong>
+                  <strong style={{ fontSize: '0.95rem' }}>Development Mock Provider</strong>
                   <span className="badge badge-warning">DEV ONLY</span>
                 </div>
-                <p style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', marginBottom: 14 }}>
-                  Simulated payment gateway for local &amp; automated verification. The backend verifies status and issues QR passes idempotently.
+                <p style={{ fontSize: '0.83rem', color: 'var(--color-text-secondary)', marginBottom: 14 }}>
+                  Simulated payment gateway for local &amp; QA verification. The backend validates status and issues QR passes idempotently.
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -269,7 +291,7 @@ export function CheckoutPage() {
                     <span>
                       {processing
                         ? 'Verifying on Backend...'
-                        : `Complete Mock Payment (${formatCurrency(order.totalAmount)})`}
+                        : `Confirm Payment (${formatCurrency(order.totalAmount)})`}
                     </span>
                   </button>
 
@@ -285,13 +307,13 @@ export function CheckoutPage() {
                 </div>
               </div>
 
-              <div className="tier-card" style={{ opacity: 0.78 }}>
+              <div className="tier-card" style={{ opacity: 0.8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <strong style={{ fontSize: '0.92rem' }}>Bakong KHQR (Planned Integration)</strong>
+                  <strong style={{ fontSize: '0.92rem' }}>Bakong KHQR (Planned)</strong>
                   <span className="badge">NOT CONFIGURED</span>
                 </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  KHQR provider interface is prepared on the backend and requires NBC Bakong merchant credentials before activation.
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                  KHQR provider contract is prepared on the backend and requires NBC Bakong merchant credentials before activation.
                 </p>
               </div>
 
@@ -305,7 +327,7 @@ export function CheckoutPage() {
                 <span>Cancel Reservation &amp; Release Seats</span>
               </button>
             </>
-          ) : order.status === 'PAID' ? (
+          ) : isPaid ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <Link to="/my-tickets" className="btn btn-primary btn-lg">
                 <QrCode size={17} />
@@ -323,12 +345,12 @@ export function CheckoutPage() {
         </aside>
       </div>
 
-      {order.status === 'PAID' && order.tickets && order.tickets.length > 0 && (
-        <section style={{ marginTop: 30 }}>
-          <h2 className="page-title" style={{ fontSize: '1.4rem', marginBottom: 16 }}>
+      {isPaid && order.tickets && order.tickets.length > 0 && (
+        <section style={{ marginTop: 32 }}>
+          <h2 className="section-title" style={{ marginBottom: 16 }}>
             Issued Digital QR Passes ({order.tickets.length})
           </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {order.tickets.map((ticket) => (
               <TicketPassCard key={ticket.id} ticket={ticket} />
             ))}

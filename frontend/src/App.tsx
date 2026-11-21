@@ -8,7 +8,6 @@ import { EventsPage } from './pages/EventsPage';
 import { EventDetailPage } from './pages/EventDetailPage';
 import { TicketLookupPage } from './pages/TicketLookupPage';
 import { ScannerPage } from './pages/ScannerPage';
-import { SystemStatusPage } from './pages/SystemStatusPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterCustomerPage } from './pages/auth/RegisterCustomerPage';
@@ -27,18 +26,19 @@ export function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/* Standalone Full-Page Auth Flows (no header or footer) */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterCustomerPage />} />
+            <Route
+              path="/register/organization"
+              element={<RegisterOrganizationPage />}
+            />
+
             <Route element={<Layout />}>
-              {/* Public Discovery & Auth */}
+              {/* Public Discovery */}
               <Route path="/" element={<HomePage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/events/:id" element={<EventDetailPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterCustomerPage />} />
-              <Route
-                path="/register/organization"
-                element={<RegisterOrganizationPage />}
-              />
-              <Route path="/status" element={<SystemStatusPage />} />
 
               {/* Authenticated Customer Flows */}
               <Route

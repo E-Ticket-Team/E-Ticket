@@ -1,47 +1,49 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
-  Activity,
-  CalendarDays,
-  LayoutDashboard,
-  LogIn,
   LogOut,
   Menu,
-  QrCode,
-  ShieldCheck,
-  Ticket,
-  User,
-  UserPlus,
   X,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../contexts/ToastContext';
-import type { HealthResponse } from '../types/api';
+import { animatePanelEnter } from '../animations/transitions';
 import { formatPersonName } from '../utils/format';
 
-interface NavbarProps {
-  health: HealthResponse | null;
-  healthLoading: boolean;
-}
-
-export function Navbar({ health, healthLoading }: NavbarProps) {
+export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const drawerPanelRef = useRef<HTMLDivElement | null>(null);
 
-  const isHealthy = health?.status === 'ok' && health?.database?.status === 'up';
-  const pillClass = healthLoading
-    ? 'health-pill'
-    : isHealthy
-      ? 'health-pill ok'
-      : 'health-pill down';
+  useEffect(() => {
+    function onScroll() {
+      setScrolled(window.scrollY > 10);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
-  const statusLabel = healthLoading
-    ? 'Checking API...'
-    : isHealthy
-      ? 'API Online'
-      : 'API Offline';
+  useEffect(() => {
+    if (!drawerOpen) {
+      document.body.style.overflow = '';
+      return;
+    }
+    document.body.style.overflow = 'hidden';
+    animatePanelEnter(drawerPanelRef.current);
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setDrawerOpen(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [drawerOpen]);
 
   const canOrganize = user?.role === 'ORGANIZER' || user?.role === 'ADMIN';
   const canScan =
@@ -63,12 +65,20 @@ export function Navbar({ health, healthLoading }: NavbarProps) {
   const navItems = (
     <>
       <NavLink
+        to="/"
+        end
+        onClick={closeDrawer}
+        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+      >
+        Discover
+      </NavLink>
+
+      <NavLink
         to="/events"
         onClick={closeDrawer}
         className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
       >
-        <CalendarDays size={16} />
-        <span>Events</span>
+        Events
       </NavLink>
 
       {canBuy && (
@@ -78,16 +88,14 @@ export function Navbar({ health, healthLoading }: NavbarProps) {
             onClick={closeDrawer}
             className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
           >
-            <Ticket size={16} />
-            <span>My Tickets</span>
+            My Tickets
           </NavLink>
           <NavLink
             to="/my-account"
             onClick={closeDrawer}
             className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
           >
-            <User size={16} />
-            <span>Account</span>
+            Account
           </NavLink>
         </>
       )}
@@ -98,8 +106,7 @@ export function Navbar({ health, healthLoading }: NavbarProps) {
           onClick={closeDrawer}
           className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
         >
-          <LayoutDashboard size={16} />
-          <span>Organizer</span>
+          Organizer
         </NavLink>
       )}
 
@@ -109,8 +116,7 @@ export function Navbar({ health, healthLoading }: NavbarProps) {
           onClick={closeDrawer}
           className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
         >
-          <QrCode size={16} />
-          <span>Scanner</span>
+          Scanner
         </NavLink>
       )}
 
@@ -120,86 +126,114 @@ export function Navbar({ health, healthLoading }: NavbarProps) {
           onClick={closeDrawer}
           className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
         >
-          <ShieldCheck size={16} />
-          <span>Admin</span>
+          Admin
         </NavLink>
       )}
     </>
   );
 
   return (
-    <header className="navbar no-print">
-      <div className="container navbar-inner">
-        <Link to="/" className="brand" onClick={closeDrawer}>
-          <span className="brand-mark">
-            <Ticket size={20} />
-          </span>
-          <span>Universal E-Ticket</span>
-        </Link>
-
-        <nav className="nav-links nav-desktop" aria-label="Primary navigation">
-          {navItems}
-        </nav>
-
-        <div className="nav-right">
-          <Link to="/status" className={pillClass} title="View system & database health">
-            <span className="status-dot" />
-            <Activity size={14} />
-            <span className="hide-xs">{statusLabel}</span>
+    <>
+      <header className={`navbar no-print ${scrolled ? 'scrolled' : ''}`}>
+        <div className="container navbar-inner">
+          <Link to="/" className="brand" onClick={closeDrawer}>
+            <span className="brand-mark" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+                <path d="M13 5v2" />
+                <path d="M13 17v2" />
+                <path d="M13 11v2" />
+              </svg>
+            </span>
+            <span>Universal E-Ticket</span>
           </Link>
 
-          <div className="nav-auth-desktop">
-            {isAuthenticated && user ? (
-              <div className="user-menu">
-                <div className="user-chip" title={user.email}>
-                  <span className="user-chip-name">{formatPersonName(user)}</span>
-                  <span className="badge badge-info">{user.role}</span>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={handleLogout}
-                >
-                  <LogOut size={14} />
-                  <span>Sign Out</span>
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Link to="/login" className="btn btn-secondary btn-sm">
-                  <LogIn size={14} />
-                  <span>Sign In</span>
-                </Link>
-                <Link to="/register" className="btn btn-primary btn-sm">
-                  <UserPlus size={14} />
-                  <span>Register</span>
-                </Link>
-              </div>
-            )}
-          </div>
+          <nav className="nav-links nav-desktop" aria-label="Primary navigation">
+            {navItems}
+          </nav>
 
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm mobile-menu-btn"
-            aria-label={drawerOpen ? 'Close navigation menu' : 'Open navigation menu'}
-            aria-expanded={drawerOpen}
-            onClick={() => setDrawerOpen((o) => !o)}
-          >
-            {drawerOpen ? <X size={18} /> : <Menu size={18} />}
-          </button>
+          <div className="nav-right">
+            <div className="nav-auth-desktop">
+              {isAuthenticated && user ? (
+                <div className="user-menu">
+                  <div className="user-chip" title={user.email}>
+                    <span className="user-chip-name">{formatPersonName(user)}</span>
+                    <span className="badge badge-info">{user.role}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={handleLogout}
+                  >
+                    <LogOut size={14} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Link to="/login" className="btn btn-ghost btn-sm">
+                    Login
+                  </Link>
+                  <Link to="/register" className="btn btn-primary btn-sm">
+                    Get Started
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-secondary btn-icon mobile-menu-btn"
+              aria-label={drawerOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen((o) => !o)}
+            >
+              {drawerOpen ? <X size={18} /> : <Menu size={18} />}
+            </button>
+          </div>
         </div>
-      </div>
+      </header>
 
       {drawerOpen && (
-        <div className="mobile-drawer" role="dialog" aria-label="Mobile navigation">
-          <div className="container mobile-drawer-inner">
-            <nav className="mobile-nav-list" aria-label="Mobile navigation links">
-              {navItems}
-            </nav>
+        <div
+          className="mobile-drawer-overlay no-print"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mobile navigation"
+          onClick={closeDrawer}
+        >
+          <div
+            ref={drawerPanelRef}
+            className="mobile-drawer-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 16,
+                }}
+              >
+                <span className="meta-caption">Menu</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-icon"
+                  aria-label="Close drawer"
+                  onClick={closeDrawer}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <nav className="mobile-nav-list" aria-label="Mobile navigation links">
+                {navItems}
+              </nav>
+            </div>
 
             <div className="mobile-drawer-footer">
               {isAuthenticated && user ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div className="user-chip" style={{ justifyContent: 'space-between' }}>
                     <span className="user-chip-name">{formatPersonName(user)}</span>
                     <span className="badge badge-info">{user.role}</span>
@@ -212,12 +246,10 @@ export function Navbar({ health, healthLoading }: NavbarProps) {
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <Link to="/login" className="btn btn-secondary" onClick={closeDrawer}>
-                    <LogIn size={15} />
-                    <span>Sign In</span>
+                    Login
                   </Link>
                   <Link to="/register" className="btn btn-primary" onClick={closeDrawer}>
-                    <UserPlus size={15} />
-                    <span>Register</span>
+                    Get Started
                   </Link>
                 </div>
               )}
@@ -225,6 +257,6 @@ export function Navbar({ health, healthLoading }: NavbarProps) {
           </div>
         </div>
       )}
-    </header>
+    </>
   );
 }

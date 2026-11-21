@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
@@ -22,6 +23,8 @@ describe('AuthService', () => {
     id: 'customer-uuid-1',
     email: 'customer@eticket.com',
     password: mockHashedPassword,
+    googleId: null,
+    avatarUrl: null,
     firstName: 'Sophea',
     lastName: 'Sreng',
     organizationName: null,
@@ -36,6 +39,8 @@ describe('AuthService', () => {
     id: 'organizer-uuid-1',
     email: 'organizer@eticket.com',
     password: mockHashedPassword,
+    googleId: null,
+    avatarUrl: null,
     firstName: 'Channthy',
     lastName: 'Tha',
     organizationName: 'Cambodia Tech Events Ltd.',
@@ -50,6 +55,7 @@ describe('AuthService', () => {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
   };
 
@@ -218,6 +224,83 @@ describe('AuthService', () => {
       await expect(service.getProfile('non-existent-uuid')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('Google OAuth Sign-In', () => {
+    it('should reject password login for Google-only users cleanly', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        ...mockCustomerUser,
+        password: null,
+        googleId: 'google-sub-123',
+      });
+
+      await expect(
+        service.login({
+          email: 'customer@eticket.com',
+          password: 'Password123!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should report google config disabled when GOOGLE_CLIENT_ID is empty', () => {
+      expect(service.getGoogleConfig()).toEqual({
+        enabled: false,
+        clientId: null,
+      });
+    });
+
+    it('should throw ServiceUnavailableException when GOOGLE_CLIENT_ID is missing', async () => {
+      await expect(
+        service.authenticateWithGoogle({ accessToken: 'fake-token' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('should create a new customer via verified Google identity and return JWT', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'google.clientId' || key === 'GOOGLE_CLIENT_ID') {
+          return 'test-google-client-id.apps.googleusercontent.com';
+        }
+        if (key === 'jwt.expiresIn' || key === 'JWT_EXPIRES_IN') return '7d';
+        return null;
+      });
+
+      const verifySpy = jest
+        .spyOn(service as any, 'verifyGoogleIdentity')
+        .mockResolvedValue({
+          googleId: 'google-sub-999',
+          email: 'gmailuser@gmail.com',
+          firstName: 'Vannak',
+          lastName: 'Sok',
+          avatarUrl: 'https://example.com/avatar.jpg',
+        });
+
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+      mockPrismaService.user.create.mockResolvedValue({
+        id: 'google-user-uuid',
+        email: 'gmailuser@gmail.com',
+        password: null,
+        googleId: 'google-sub-999',
+        avatarUrl: 'https://example.com/avatar.jpg',
+        firstName: 'Vannak',
+        lastName: 'Sok',
+        organizationName: null,
+        phoneNumber: null,
+        role: Role.CUSTOMER,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await service.authenticateWithGoogle({
+        accessToken: 'google-access-token',
+      });
+
+      expect(verifySpy).toHaveBeenCalled();
+      expect(result.accessToken).toBe('mock-jwt-token-xyz');
+      expect(result.user.email).toBe('gmailuser@gmail.com');
+      expect(result.user.role).toBe(Role.CUSTOMER);
+      expect((result.user as any).password).toBeUndefined();
     });
   });
 });

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CreditCard, Receipt, Ticket, User } from 'lucide-react';
+import { CalendarDays, CreditCard, Receipt, Ticket, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../contexts/ToastContext';
 import { ApiError } from '../../services/api';
@@ -13,6 +13,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
 import { PageHeader } from '../../components/common/PageHeader';
 import { Skeleton } from '../../components/common/Skeleton';
+import { StatCard } from '../../components/common/StatCard';
 
 export function MyAccountPage() {
   const { user } = useAuth();
@@ -41,6 +42,20 @@ export function MyAccountPage() {
     loadOrders();
   }, [loadOrders]);
 
+  const metrics = useMemo(() => {
+    const validTickets = orders.reduce(
+      (sum, o) =>
+        sum + (o.tickets?.filter((t) => t.status === 'VALID').length ?? 0),
+      0,
+    );
+    const totalSpent = orders
+      .filter((o) => o.status === 'PAID')
+      .reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
+    const pendingCount = orders.filter((o) => o.status === 'PENDING').length;
+
+    return { validTickets, totalSpent, pendingCount, totalOrders: orders.length };
+  }, [orders]);
+
   async function handleConfirmCancel() {
     if (!cancelTarget) return;
     try {
@@ -59,8 +74,8 @@ export function MyAccountPage() {
   return (
     <div>
       <PageHeader
-        title="My Account & Orders"
-        subtitle="Manage your profile, track pending checkouts, and review order history."
+        title={`Welcome, ${formatPersonName(user)}`}
+        subtitle="Manage your profile, track pending checkouts, and review your ticket order history."
         actions={
           <Link to="/my-tickets" className="btn btn-primary">
             <Ticket size={16} />
@@ -69,12 +84,38 @@ export function MyAccountPage() {
         }
       />
 
+      <div className="kpi-grid">
+        <StatCard
+          label="Valid Digital Passes"
+          value={metrics.validTickets}
+          icon={<Ticket size={18} />}
+          tone="brand"
+        />
+        <StatCard
+          label="Total Orders"
+          value={metrics.totalOrders}
+          hint={`${metrics.pendingCount} pending payment`}
+          icon={<Receipt size={18} />}
+        />
+        <StatCard
+          label="Total Confirmed Spend"
+          value={formatCurrency(metrics.totalSpent)}
+          icon={<CreditCard size={18} />}
+          tone="success"
+        />
+        <StatCard
+          label="Account Status"
+          value={user?.isActive ? 'Active' : 'Suspended'}
+          icon={<CalendarDays size={18} />}
+        />
+      </div>
+
       {user && (
-        <div className="card card-padded" style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
+        <div className="card card-padded" style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <User size={20} color="var(--brand-primary)" />
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Profile Information</h2>
+              <User size={20} color="var(--color-primary)" />
+              <h2 className="card-title">Profile Information</h2>
             </div>
             <span className="badge badge-info">{user.role}</span>
           </div>
@@ -82,19 +123,19 @@ export function MyAccountPage() {
           <div className="grid-4">
             <div>
               <div className="meta-caption">Name</div>
-              <div style={{ fontWeight: 600 }}>{formatPersonName(user)}</div>
+              <div style={{ fontWeight: 600, marginTop: 4 }}>{formatPersonName(user)}</div>
             </div>
             <div>
               <div className="meta-caption">Email</div>
-              <div style={{ fontWeight: 600 }}>{user.email}</div>
+              <div style={{ fontWeight: 600, marginTop: 4 }}>{user.email}</div>
             </div>
             <div>
               <div className="meta-caption">Phone</div>
-              <div style={{ fontWeight: 600 }}>{user.phoneNumber || '—'}</div>
+              <div style={{ fontWeight: 600, marginTop: 4 }}>{user.phoneNumber || '—'}</div>
             </div>
             <div>
               <div className="meta-caption">Member Since</div>
-              <div style={{ fontWeight: 600 }}>{formatDateTime(user.createdAt)}</div>
+              <div style={{ fontWeight: 600, marginTop: 4 }}>{formatDateTime(user.createdAt)}</div>
             </div>
           </div>
         </div>
@@ -102,7 +143,7 @@ export function MyAccountPage() {
 
       {error && <AlertBanner variant="error" message={error} />}
 
-      <h2 className="page-title" style={{ fontSize: '1.35rem', marginBottom: 14 }}>
+      <h2 className="section-title" style={{ marginBottom: 14 }}>
         Order History
       </h2>
 
@@ -115,7 +156,7 @@ export function MyAccountPage() {
           description="Reserve tickets on any published event to start an order."
           action={
             <Link to="/events" className="btn btn-primary">
-              Browse Events
+              Explore Events
             </Link>
           }
         />
@@ -160,7 +201,7 @@ export function MyAccountPage() {
                     <td>
                       <StatusBadge status={ord.status} />
                     </td>
-                    <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    <td style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)' }}>
                       {formatDateTime(ord.createdAt)}
                     </td>
                     <td>
