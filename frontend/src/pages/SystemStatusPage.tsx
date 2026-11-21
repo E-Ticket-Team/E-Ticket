@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Activity, Database, ExternalLink, RefreshCw, Server } from 'lucide-react';
-import { api, ApiError } from '../services/api';
+import { ApiError, BASE_URL, healthApi } from '../services/api';
 import type { HealthResponse } from '../types/api';
 import { formatDateTime, formatUptime } from '../utils/format';
 import { AlertBanner } from '../components/AlertBanner';
 import { StatusBadge } from '../components/StatusBadge';
+import { PageHeader } from '../components/common/PageHeader';
 
 export function SystemStatusPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -14,7 +15,7 @@ export function SystemStatusPage() {
   async function fetchHealth() {
     try {
       setLoading(true);
-      const data = await api.getHealth();
+      const data = await healthApi.getHealth();
       setHealth(data);
       setError(null);
     } catch (err) {
@@ -22,7 +23,7 @@ export function SystemStatusPage() {
       setError(
         err instanceof ApiError
           ? err.message
-          : 'Unable to reach backend /health endpoint on port 4000.',
+          : 'Unable to reach backend /health endpoint.',
       );
     } finally {
       setLoading(false);
@@ -33,37 +34,28 @@ export function SystemStatusPage() {
     fetchHealth();
   }, []);
 
-  const swaggerUrl = `${
-    (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/+$/, '') ||
-    'http://localhost:4000'
-  }/api/docs`;
+  const swaggerUrl = BASE_URL
+    ? `${BASE_URL}/api/docs`
+    : `${window.location.protocol}//${window.location.hostname}:4000/api/docs`;
 
   return (
     <div>
-      <div className="section-header">
-        <div>
-          <h1 className="page-title">System &amp; API Status</h1>
-          <p className="page-subtitle">
-            Live connectivity check for the NestJS REST API and PostgreSQL database.
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn-secondary" onClick={fetchHealth} disabled={loading}>
-            <RefreshCw size={16} />
-            <span>{loading ? 'Checking...' : 'Refresh Status'}</span>
-          </button>
-          <a
-            href={swaggerUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn-primary"
-          >
-            <span>Open Swagger Docs</span>
-            <ExternalLink size={15} />
-          </a>
-        </div>
-      </div>
+      <PageHeader
+        title="System & API Status"
+        subtitle="Live connectivity check for the NestJS REST API and PostgreSQL database."
+        actions={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={fetchHealth} disabled={loading}>
+              <RefreshCw size={16} />
+              <span>{loading ? 'Checking...' : 'Refresh Status'}</span>
+            </button>
+            <a href={swaggerUrl} target="_blank" rel="noreferrer" className="btn btn-primary">
+              <span>Open Swagger Docs</span>
+              <ExternalLink size={15} />
+            </a>
+          </>
+        }
+      />
 
       {error && <AlertBanner variant="error" title="Health Check Failed" message={error} />}
 
@@ -122,11 +114,6 @@ export function SystemStatusPage() {
                   GET /health
                 </span>
               </div>
-              {health.database.error && (
-                <div style={{ color: 'var(--danger-text)', fontSize: '0.85rem' }}>
-                  Error: {health.database.error}
-                </div>
-              )}
             </div>
           </div>
         </div>

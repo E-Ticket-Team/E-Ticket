@@ -1,5 +1,13 @@
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
+import {
+  IsBooleanString,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  validateSync,
+} from 'class-validator';
 
 enum Environment {
   Development = 'development',
@@ -35,6 +43,19 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   JWT_EXPIRES_IN?: string = '7d';
+
+  @IsString()
+  @IsOptional()
+  QR_SIGNING_SECRET?: string;
+
+  @IsBooleanString()
+  @IsOptional()
+  COOKIE_SECURE?: string = 'false';
+
+  @IsNumber()
+  @Min(1)
+  @IsOptional()
+  ORDER_RESERVATION_MINUTES?: number = 15;
 }
 
 export function validate(config: Record<string, unknown>) {
@@ -52,4 +73,3 @@ export function validate(config: Record<string, unknown>) {
 
   return validatedConfig;
 }
-

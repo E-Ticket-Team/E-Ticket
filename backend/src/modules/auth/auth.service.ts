@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -12,7 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterOrganizationDto } from './dto/register-organization.dto';
-import { RegisterDto } from './dto/register.dto';
+import { PublicRegistrationRole, RegisterDto } from './dto/register.dto';
 import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 
@@ -83,16 +84,26 @@ export class AuthService {
   }
 
   /**
-   * Flexible unified registration endpoint
+   * Unified public registration endpoint restricted strictly to CUSTOMER or ORGANIZER.
    */
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
     const normalizedEmail = dto.email.trim().toLowerCase();
 
     await this.ensureEmailNotRegistered(normalizedEmail);
 
-    const hashedPassword = await this.hashPassword(dto.password);
+    const requestedRole = dto.role || PublicRegistrationRole.CUSTOMER;
+    const role =
+      requestedRole === PublicRegistrationRole.ORGANIZER
+        ? Role.ORGANIZER
+        : Role.CUSTOMER;
 
-    const role = dto.role || Role.CUSTOMER;
+    if (role === Role.ORGANIZER && !dto.organizationName?.trim()) {
+      throw new BadRequestException(
+        'Organization name is required when registering as an organizer',
+      );
+    }
+
+    const hashedPassword = await this.hashPassword(dto.password);
 
     const user = await this.prisma.user.create({
       data: {
@@ -121,6 +132,10 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.isActive === false) {
+      throw new UnauthorizedException('This account has been suspended');
     }
 
     const isPasswordValid = await this.comparePassword(
@@ -202,6 +217,7 @@ export class AuthService {
       organizationName: user.organizationName ?? undefined,
       phoneNumber: user.phoneNumber ?? undefined,
       role: user.role,
+      isActive: user.isActive,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

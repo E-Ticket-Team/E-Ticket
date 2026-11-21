@@ -1,18 +1,20 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  Camera,
-  CameraOff,
   CheckCircle2,
   QrCode,
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
-import { api, ApiError } from '../services/api';
-import type { TicketDetail } from '../types/api';
-import { formatDateTime, SAMPLE_TICKET_CODE } from '../utils/format';
+import { ApiError } from '../services/api';
+import { ticketsService } from '../services/tickets.service';
+import type { EventItem, TicketDetail } from '../types/api';
+import { formatDateTime } from '../utils/format';
+import { AlertBanner } from '../components/AlertBanner';
 import { StatusBadge } from '../components/StatusBadge';
 import { TicketPassCard } from '../components/TicketPassCard';
+import { PageHeader } from '../components/common/PageHeader';
+import { CameraScanner } from '../components/scanner/CameraScanner';
 
 interface ScanHistoryEntry {
   id: string;
@@ -22,21 +24,15 @@ interface ScanHistoryEntry {
   scannedAt: string;
 }
 
-interface BarcodeDetectorResult {
-  rawValue?: string;
-}
-
-interface BarcodeDetectorInstance {
-  detect(source: HTMLVideoElement): Promise<BarcodeDetectorResult[]>;
-}
-
-interface BarcodeDetectorConstructor {
-  new (options?: { formats?: string[] }): BarcodeDetectorInstance;
-}
-
 export function ScannerPage() {
   const [searchParams] = useSearchParams();
   const initialCode = searchParams.get('code') ?? '';
+
+  const [authorizedEvents, setAuthorizedEvents] = useState<
+    Array<Pick<EventItem, 'id' | 'title' | 'venue' | 'status'>>
+  >([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   const [ticketCode, setTicketCode] = useState(initialCode);
   const [submitting, setSubmitting] = useState(false);
@@ -48,12 +44,6 @@ export function ScannerPage() {
   } | null>(null);
   const [history, setHistory] = useState<ScanHistoryEntry[]>([]);
 
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
-
   useEffect(() => {
     if (initialCode) {
       setTicketCode(initialCode);
@@ -61,104 +51,45 @@ export function ScannerPage() {
   }, [initialCode]);
 
   useEffect(() => {
-    return () => {
-      stopCamera();
-    };
-  }, []);
-
-  function stopCamera() {
-    if (rafRef.current !== null) {
-      window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    setCameraActive(false);
-  }
-
-  async function startCamera() {
-    setCameraError(null);
-    const Detector = (
-      window as unknown as { BarcodeDetector?: BarcodeDetectorConstructor }
-    ).BarcodeDetector;
-
-    if (!Detector) {
-      setCameraError(
-        'Live QR camera scanning requires a browser supporting BarcodeDetector (e.g. Chrome/Edge). You can still type or use a USB barcode scanner below.',
-      );
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Camera access is not available in this browser context.');
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+    ticketsService
+      .getScannerEvents()
+      .then((evs) => {
+        setAuthorizedEvents(evs);
+        if (evs.length === 1) {
+          setSelectedEventId(evs[0].id);
+        }
+      })
+      .catch((err) => {
+        setEventsError(
+          err instanceof ApiError
+            ? err.message
+            : 'Unable to load authorized gate events.',
+        );
       });
-      streamRef.current = stream;
-      setCameraActive(true);
-
-      const detector = new Detector({ formats: ['qr_code'] });
-
-      window.setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-      }, 50);
-
-      let busyDetecting = false;
-      const scanLoop = async () => {
-        if (!streamRef.current) return;
-        if (videoRef.current && videoRef.current.readyState >= 2 && !busyDetecting) {
-          busyDetecting = true;
-          try {
-            const barcodes = await detector.detect(videoRef.current);
-            const raw = barcodes[0]?.rawValue?.trim();
-            if (raw) {
-              setTicketCode(raw);
-              stopCamera();
-              await runValidation(raw);
-              return;
-            }
-          } catch {
-            // Continue scanning frames
-          } finally {
-            busyDetecting = false;
-          }
-        }
-        rafRef.current = window.requestAnimationFrame(scanLoop);
-      };
-
-      rafRef.current = window.requestAnimationFrame(scanLoop);
-    } catch {
-      setCameraError('Could not access camera. Please check browser camera permissions.');
-      stopCamera();
-    }
-  }
+  }, []);
 
   async function runValidation(rawCode: string) {
     const cleaned = rawCode.trim();
     if (!cleaned || submitting) return;
 
+    setTicketCode(cleaned);
     setSubmitting(true);
+
     try {
-      const res = await api.validateTicket(cleaned);
+      const res = await ticketsService.validate(
+        cleaned,
+        selectedEventId || undefined,
+      );
       setResultState({
         kind: 'success',
-        title: 'Entry Approved — Ticket Checked In',
-        message: res.message,
+        title: 'ENTRY APPROVED — TICKET CHECKED IN',
+        message: `${res.message} · Check-in recorded at ${formatDateTime(res.ticket.usedAt)}`,
         ticket: res.ticket,
       });
       setHistory((prev) => [
         {
           id: `${Date.now()}-${Math.random()}`,
-          ticketCode: cleaned,
+          ticketCode: res.ticket.ticketCode,
           outcome: 'VALIDATED',
           message: res.message,
           scannedAt: new Date().toISOString(),
@@ -171,7 +102,9 @@ export function ScannerPage() {
       const message = apiErr?.message || 'Ticket validation failed.';
       setResultState({
         kind: isConflict ? 'conflict' : 'error',
-        title: isConflict ? 'Duplicate Entry Blocked (Already Used)' : 'Validation Failed',
+        title: isConflict
+          ? 'DUPLICATE ENTRY BLOCKED (ALREADY USED)'
+          : 'TICKET REJECTED / INVALID',
         message,
       });
       setHistory((prev) => [
@@ -196,45 +129,59 @@ export function ScannerPage() {
 
   return (
     <div>
-      <div className="section-header">
-        <div>
-          <h1 className="page-title">Gate Check-In Scanner</h1>
-          <p className="page-subtitle">
-            Verify digital tickets, mark passes as USED, and prevent duplicate entry.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {cameraActive ? (
-            <button type="button" className="btn btn-danger" onClick={stopCamera}>
-              <CameraOff size={16} />
-              <span>Stop Camera</span>
-            </button>
-          ) : (
-            <button type="button" className="btn btn-secondary" onClick={startCamera}>
-              <Camera size={16} />
-              <span>Scan with Camera</span>
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Gate Check-In Scanner"
+        subtitle="Verify QR credentials against the backend database in real time and block duplicate entry."
+      />
+
+      {eventsError && <AlertBanner variant="warning" message={eventsError} />}
+
+      {authorizedEvents.length === 0 && !eventsError && (
+        <AlertBanner
+          variant="info"
+          title="No Assigned Events Found"
+          message="You do not currently have any events assigned to your gate account. Ask an organizer to assign your email under Event Settings."
+        />
+      )}
 
       <div className="grid-2" style={{ alignItems: 'start', marginBottom: 24 }}>
-        <div className="card card-padded">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <div className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <QrCode size={20} color="var(--brand-primary)" />
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Verify Ticket Code</h2>
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Gate Scan Terminal</h2>
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="input-group">
+            <label htmlFor="gate-event-select" className="input-label">
+              Active Gate Event Scope
+            </label>
+            <select
+              id="gate-event-select"
+              className="select"
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+            >
+              <option value="">All Authorized Events ({authorizedEvents.length})</option>
+              {authorizedEvents.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.title} — {ev.venue}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <CameraScanner onDetected={runValidation} disabled={submitting} />
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="input-group">
               <label htmlFor="scanner-code-input" className="input-label">
-                Ticket Code (Manual or USB Scanner)
+                Manual Ticket Code or Scanned QR Payload
               </label>
               <input
                 id="scanner-code-input"
                 type="text"
                 className="input"
-                placeholder={`e.g. ${SAMPLE_TICKET_CODE}`}
+                placeholder="Paste ETK1... QR payload or enter TKT-..."
                 value={ticketCode}
                 onChange={(e) => setTicketCode(e.target.value)}
                 required
@@ -244,57 +191,24 @@ export function ScannerPage() {
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button
                 type="submit"
-                className="btn btn-primary"
+                className="btn btn-primary btn-lg"
                 disabled={submitting || !ticketCode.trim()}
+                style={{ flex: 1 }}
               >
-                <CheckCircle2 size={16} />
-                <span>{submitting ? 'Validating...' : 'Validate & Check In'}</span>
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setTicketCode(SAMPLE_TICKET_CODE)}
-              >
-                Fill Sample Code
+                <CheckCircle2 size={17} />
+                <span>{submitting ? 'Verifying with Server...' : 'Validate & Check In'}</span>
               </button>
 
               {ticketCode.trim() && (
                 <Link
                   to={`/tickets/${encodeURIComponent(ticketCode.trim())}`}
-                  className="btn btn-secondary"
+                  className="btn btn-secondary btn-lg"
                 >
-                  Inspect Pass
+                  Inspect
                 </Link>
               )}
             </div>
           </form>
-
-          {cameraError && (
-            <div className="alert alert-warning" style={{ marginTop: 16, marginBottom: 0 }}>
-              <ShieldAlert size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-              <div style={{ fontSize: '0.88rem' }}>{cameraError}</div>
-            </div>
-          )}
-
-          {cameraActive && (
-            <div
-              style={{
-                marginTop: 16,
-                backgroundColor: '#0f172a',
-                borderRadius: 'var(--radius-md)',
-                overflow: 'hidden',
-                border: '1px solid var(--border-strong)',
-              }}
-            >
-              <video
-                ref={videoRef}
-                muted
-                playsInline
-                style={{ width: '100%', display: 'block', maxHeight: 280, objectFit: 'cover' }}
-              />
-            </div>
-          )}
         </div>
 
         <div className="card card-padded">
@@ -306,7 +220,12 @@ export function ScannerPage() {
               marginBottom: 14,
             }}
           >
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Session Check-In Log</h2>
+            <div>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Session Check-In Log</h2>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Local UI log only — backend database enforces authoritative validity.
+              </p>
+            </div>
             {history.length > 0 && (
               <button
                 type="button"
@@ -320,21 +239,9 @@ export function ScannerPage() {
           </div>
 
           {history.length === 0 ? (
-            <div
-              style={{
-                backgroundColor: 'var(--bg-subtle)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-sm)',
-                padding: 20,
-                textAlign: 'center',
-                color: 'var(--text-muted)',
-                fontSize: '0.9rem',
-              }}
-            >
-              No tickets scanned in this session yet.
-            </div>
+            <div className="chart-empty">No tickets scanned in this browser session yet.</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 360, overflowY: 'auto' }}>
               {history.map((item) => (
                 <div
                   key={item.id}
@@ -354,7 +261,7 @@ export function ScannerPage() {
                       marginBottom: 4,
                     }}
                   >
-                    <span className="code-chip" style={{ fontSize: '0.8rem' }}>
+                    <span className="code-chip" style={{ fontSize: '0.78rem' }}>
                       {item.ticketCode}
                     </span>
                     <StatusBadge
@@ -367,10 +274,10 @@ export function ScannerPage() {
                       }
                     />
                   </div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
                     {item.message}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4 }}>
                     {formatDateTime(item.scannedAt)}
                   </div>
                 </div>
@@ -381,7 +288,7 @@ export function ScannerPage() {
       </div>
 
       {resultState && (
-        <div style={{ marginTop: 8 }}>
+        <div>
           <div
             className={`alert ${
               resultState.kind === 'success'
@@ -390,14 +297,15 @@ export function ScannerPage() {
                   ? 'alert-warning'
                   : 'alert-error'
             }`}
+            role="status"
           >
             {resultState.kind === 'success' ? (
-              <CheckCircle2 size={20} style={{ flexShrink: 0, marginTop: 2 }} />
+              <CheckCircle2 size={22} style={{ flexShrink: 0, marginTop: 2 }} />
             ) : (
-              <ShieldAlert size={20} style={{ flexShrink: 0, marginTop: 2 }} />
+              <ShieldAlert size={22} style={{ flexShrink: 0, marginTop: 2 }} />
             )}
             <div>
-              <div style={{ fontWeight: 800, fontSize: '1.02rem', marginBottom: 4 }}>
+              <div style={{ fontWeight: 800, fontSize: '1.06rem', marginBottom: 4 }}>
                 {resultState.title}
               </div>
               <div style={{ fontSize: '0.94rem' }}>{resultState.message}</div>
@@ -405,7 +313,7 @@ export function ScannerPage() {
           </div>
 
           {resultState.ticket && (
-            <TicketPassCard ticket={resultState.ticket} showValidateButton={false} />
+            <TicketPassCard ticket={resultState.ticket} showActions={false} />
           )}
         </div>
       )}

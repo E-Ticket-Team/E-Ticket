@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
   IsEmail,
@@ -9,6 +8,11 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
+
+export enum PublicRegistrationRole {
+  CUSTOMER = 'CUSTOMER',
+  ORGANIZER = 'ORGANIZER',
+}
 
 export class RegisterDto {
   @ApiProperty({
@@ -32,13 +36,15 @@ export class RegisterDto {
   password: string;
 
   @ApiPropertyOptional({
-    enum: Role,
-    default: Role.CUSTOMER,
-    description: 'User role: CUSTOMER or ORGANIZER',
+    enum: PublicRegistrationRole,
+    default: PublicRegistrationRole.CUSTOMER,
+    description: 'Public registration role: CUSTOMER or ORGANIZER only',
   })
-  @IsEnum(Role, { message: 'Role must be either CUSTOMER or ORGANIZER' })
+  @IsEnum(PublicRegistrationRole, {
+    message: 'Role must be either CUSTOMER or ORGANIZER',
+  })
   @IsOptional()
-  role?: Role = Role.CUSTOMER;
+  role?: PublicRegistrationRole = PublicRegistrationRole.CUSTOMER;
 
   @ApiPropertyOptional({
     example: 'Cambodia Tech Events Ltd.',

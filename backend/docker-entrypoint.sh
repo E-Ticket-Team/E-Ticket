@@ -3,13 +3,16 @@ set -e
 
 echo "==> E-Ticket Backend: Checking environment and database..."
 
-# Wait for PostgreSQL to be ready if DATABASE_URL is set
 if [ -n "$DATABASE_URL" ]; then
-  echo "==> Applying Prisma schema to database..."
-  npx prisma db push --skip-generate || echo "Warning: prisma db push failed or database not ready yet."
+  if [ -d "./prisma/migrations" ] && [ "$(ls -A ./prisma/migrations 2>/dev/null)" ]; then
+    echo "==> Applying Prisma migrations..."
+    npx prisma migrate deploy
+  else
+    echo "==> Pushing Prisma schema to database..."
+    npx prisma db push --skip-generate
+  fi
 fi
 
-# Optional seed if SEED_DATABASE is true
 if [ "$SEED_DATABASE" = "true" ]; then
   echo "==> Seeding database..."
   node -e "require('./dist/prisma/seed.js')" 2>/dev/null || npx ts-node prisma/seed.ts 2>/dev/null || echo "Seed skipped."

@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Outlet } from 'react-router-dom';
-import { api } from '../services/api';
+import { Link, Outlet } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
+import { healthApi } from '../services/api';
 import type { HealthResponse } from '../types/api';
-import { Navbar } from './Navbar';
+import { AlertBanner } from './AlertBanner';
 import { Footer } from './Footer';
+import { Navbar } from './Navbar';
 
 export function Layout() {
+  const { sessionExpired, clearSessionExpired } = useAuth();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthLoading, setHealthLoading] = useState(true);
 
@@ -14,7 +17,7 @@ export function Layout() {
 
     async function checkHealth() {
       try {
-        const res = await api.getHealth();
+        const res = await healthApi.getHealth();
         if (active) setHealth(res);
       } catch {
         if (active) setHealth(null);
@@ -36,7 +39,26 @@ export function Layout() {
       <Navbar health={health} healthLoading={healthLoading} />
       <main className="main-content">
         <div className="container">
-          <Outlet />
+          {sessionExpired && (
+            <div style={{ marginBottom: 20 }}>
+              <AlertBanner
+                variant="warning"
+                title="Session Expired"
+                message="Your session has expired. Please sign in again to continue."
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Link to="/login" className="btn btn-primary btn-sm" onClick={clearSessionExpired}>
+                  Sign In Again
+                </Link>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={clearSessionExpired}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="page-transition">
+            <Outlet />
+          </div>
         </div>
       </main>
       <Footer />

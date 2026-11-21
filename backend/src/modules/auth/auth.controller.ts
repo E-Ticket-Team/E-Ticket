@@ -4,16 +4,22 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Optional,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
+import { AUTH_COOKIE_NAME, parseDurationMs } from './auth.constants';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { RegisterOrganizationDto } from './dto/register-organization.dto';
@@ -25,12 +31,51 @@ import { CurrentUser } from './decorators/current-user.decorator';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  private readonly cookieSecure: boolean;
+  private readonly cookieMaxAgeMs: number;
+
+  constructor(
+    private readonly authService: AuthService,
+    @Optional() private readonly configService?: ConfigService,
+  ) {
+    this.cookieSecure =
+      this.configService?.get<boolean>('jwt.cookieSecure') ?? false;
+    const expiresIn =
+      this.configService?.get<string>('jwt.expiresIn') || '7d';
+    this.cookieMaxAgeMs = parseDurationMs(expiresIn);
+  }
+
+  private setAuthCookie(res: Response | undefined, token: string): void {
+    if (!res || typeof res.cookie !== 'function') {
+      return;
+    }
+    res.cookie(AUTH_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: this.cookieSecure,
+      path: '/',
+      maxAge: this.cookieMaxAgeMs,
+    });
+  }
+
+  private clearAuthCookie(res: Response | undefined): void {
+    if (!res || typeof res.clearCookie !== 'function') {
+      return;
+    }
+    res.clearCookie(AUTH_COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: this.cookieSecure,
+      path: '/',
+    });
+  }
 
   @Post('register/customer')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({
     summary: 'Register a new customer',
-    description: 'Creates a customer account and returns JWT credentials',
+    description:
+      'Creates a customer account, sets HttpOnly session cookie, and returns JWT credentials',
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -45,17 +90,21 @@ export class AuthController {
     status: HttpStatus.BAD_REQUEST,
     description: 'Validation failed',
   })
-  registerCustomer(
+  async registerCustomer(
     @Body() dto: RegisterCustomerDto,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<AuthResponseDto> {
-    return this.authService.registerCustomer(dto);
+    const auth = await this.authService.registerCustomer(dto);
+    this.setAuthCookie(res, auth.accessToken);
+    return auth;
   }
 
   @Post('register/organization')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({
     summary: 'Register a new organization / event organizer',
     description:
-      'Creates an organization account with ORGANIZER role and returns JWT credentials',
+      'Creates an organization account with ORGANIZER role, sets HttpOnly session cookie, and returns JWT credentials',
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -70,17 +119,21 @@ export class AuthController {
     status: HttpStatus.BAD_REQUEST,
     description: 'Validation failed',
   })
-  registerOrganization(
+  async registerOrganization(
     @Body() dto: RegisterOrganizationDto,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<AuthResponseDto> {
-    return this.authService.registerOrganization(dto);
+    const auth = await this.authService.registerOrganization(dto);
+    this.setAuthCookie(res, auth.accessToken);
+    return auth;
   }
 
   @Post('register')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({
-    summary: 'Unified registration (Customer or Organization)',
+    summary: 'Unified public registration (Customer or Organization only)',
     description:
-      'Creates an account based on provided role (defaults to CUSTOMER if omitted)',
+      'Creates a CUSTOMER or ORGANIZER account (ADMIN and SCANNER roles cannot be self-assigned)',
   })
   @ApiResponse({
     status: HttpStatus.CREATED,
@@ -91,18 +144,22 @@ export class AuthController {
     status: HttpStatus.CONFLICT,
     description: 'Email is already registered',
   })
-  register(
+  async register(
     @Body() dto: RegisterDto,
+    @Res({ passthrough: true }) res?: Response,
   ): Promise<AuthResponseDto> {
-    return this.authService.register(dto);
+    const auth = await this.authService.register(dto);
+    this.setAuthCookie(res, auth.accessToken);
+    return auth;
   }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
   @ApiOperation({
     summary: 'Authenticate user (login)',
     description:
-      'Validates email and password credentials for either customers or organizations and returns a JWT Bearer access token',
+      'Validates email and password credentials, sets HttpOnly auth cookie, and returns a JWT Bearer access token',
   })
   @ApiResponse({
     status: HttpStatus.OK,
@@ -113,8 +170,28 @@ export class AuthController {
     status: HttpStatus.UNAUTHORIZED,
     description: 'Invalid email or password',
   })
-  login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res?: Response,
+  ): Promise<AuthResponseDto> {
+    const auth = await this.authService.login(dto);
+    this.setAuthCookie(res, auth.accessToken);
+    return auth;
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Log out current user',
+    description: 'Clears the HttpOnly authentication session cookie',
+  })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Logged out successfully',
+  })
+  logout(@Res({ passthrough: true }) res?: Response): { loggedOut: boolean } {
+    this.clearAuthCookie(res);
+    return { loggedOut: true };
   }
 
   @Get('me')
@@ -123,7 +200,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Get current authenticated user profile',
     description:
-      'Returns the profile details of the user associated with the provided JWT Bearer token',
+      'Returns the profile details of the user associated with the provided JWT session cookie or Bearer token',
   })
   @ApiResponse({
     status: HttpStatus.OK,

@@ -26,12 +26,25 @@ enum OrderStatus {
   PAID
   CANCELLED
   REFUNDED
+  EXPIRED
 }
 
 enum TicketStatus {
   VALID
   USED
   CANCELLED
+}
+
+enum PaymentProvider {
+  MOCK
+  KHQR
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
 }
 
 model User {
@@ -43,11 +56,14 @@ model User {
   organizationName String?
   phoneNumber      String?
   role             Role     @default(CUSTOMER)
+  isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  events    Event[]
-  orders    Order[]
+  events             Event[]
+  orders             Order[]
+  scannerAssignments EventScanner[]
+  checkedInTickets   Ticket[]       @relation("TicketCheckedInBy")
 
   @@map("users")
 }
@@ -69,7 +85,11 @@ model Event {
   updatedAt   DateTime    @updatedAt
 
   ticketTypes TicketType[]
+  scanners    EventScanner[]
 
+  @@index([status, startDate])
+  @@index([organizerId])
+  @@index([category])
   @@map("events")
 }
 
@@ -85,39 +105,105 @@ model TicketType {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  tickets           Ticket[]
+  tickets    Ticket[]
+  orderItems OrderItem[]
 
+  @@index([eventId])
   @@map("ticket_types")
 }
 
 model Order {
-  id               String      @id @default(uuid())
-  userId           String
-  user             User        @relation(fields: [userId], references: [id])
-  totalAmount      Decimal     @db.Decimal(10, 2)
-  status           OrderStatus @default(PENDING)
-  paymentReference String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  id                 String      @id @default(uuid())
+  userId             String
+  user               User        @relation(fields: [userId], references: [id])
+  totalAmount        Decimal     @db.Decimal(10, 2)
+  currency           String      @default("USD")
+  status             OrderStatus @default(PENDING)
+  paymentReference   String?
+  expiresAt          DateTime?
+  paidAt             DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  inventoryReleased  Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
-  tickets          Ticket[]
+  items    OrderItem[]
+  payments Payment[]
+  tickets  Ticket[]
 
+  @@index([userId, createdAt])
+  @@index([status, expiresAt])
   @@map("orders")
 }
 
-model Ticket {
-  id           String       @id @default(uuid())
+model OrderItem {
+  id           String     @id @default(uuid())
   orderId      String
-  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order        Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   ticketTypeId String
-  ticketType   TicketType   @relation(fields: [ticketTypeId], references: [id])
-  ticketCode   String       @unique
-  qrCode       String?
-  status       TicketStatus @default(VALID)
-  usedAt       DateTime?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  ticketType   TicketType @relation(fields: [ticketTypeId], references: [id])
+  quantity     Int
+  unitPrice    Decimal    @db.Decimal(10, 2)
+  subtotal     Decimal    @db.Decimal(10, 2)
+  createdAt    DateTime   @default(now())
 
+  @@index([orderId])
+  @@index([ticketTypeId])
+  @@map("order_items")
+}
+
+model Payment {
+  id                String          @id @default(uuid())
+  orderId           String
+  order             Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider          PaymentProvider @default(MOCK)
+  amount            Decimal         @db.Decimal(10, 2)
+  currency          String          @default("USD")
+  status            PaymentStatus   @default(PENDING)
+  idempotencyKey    String          @unique
+  providerReference String?         @unique
+  failureReason     String?
+  metadata          Json?
+  paidAt            DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+  @@map("payments")
+}
+
+model Ticket {
+  id            String       @id @default(uuid())
+  orderId       String
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketTypeId  String
+  ticketType    TicketType   @relation(fields: [ticketTypeId], references: [id])
+  ticketCode    String       @unique
+  qrCode        String?
+  qrTokenHash   String?      @unique
+  status        TicketStatus @default(VALID)
+  usedAt        DateTime?
+  checkedInById String?
+  checkedInBy   User?        @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([orderId])
+  @@index([ticketTypeId, status])
   @@map("tickets")
 }
 
+model EventScanner {
+  id         String   @id @default(uuid())
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([userId])
+  @@map("event_scanners")
+}

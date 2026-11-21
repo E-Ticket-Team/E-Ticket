@@ -29,8 +29,13 @@ services:
       NODE_ENV: production
       PORT: 4000
       API_PREFIX: api/v1
-      CORS_ORIGIN: "*"
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
       DATABASE_URL: "postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-eticket}?schema=public"
+      JWT_SECRET: ${JWT_SECRET:-eticket-jwt-secret-key-change-in-production-2026}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      QR_SIGNING_SECRET: ${QR_SIGNING_SECRET:-eticket-qr-signing-secret-change-in-production-2026}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ORDER_RESERVATION_MINUTES: ${ORDER_RESERVATION_MINUTES:-15}
     ports:
       - "${BACKEND_PORT:-4000}:4000"
     depends_on:
