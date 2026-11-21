@@ -1,0 +1,411 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  CreditCard,
+  Printer,
+  QrCode,
+  ShieldCheck,
+  XCircle,
+} from 'lucide-react';
+import { animatePanelEnter } from '../../animations/transitions';
+import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../contexts/ToastContext';
+import { ApiError } from '../../services/api';
+import { ordersService } from '../../services/orders.service';
+import { paymentsService } from '../../services/payments.service';
+import type { OrderSummary } from '../../types/api';
+import { formatBuyerEmail, formatBuyerName, formatCurrency, formatDateTime } from '../../utils/format';
+import { getGuestOrderToken, saveGuestOrderToken } from '../../utils/guestOrders';
+import { AlertBanner } from '../../components/AlertBanner';
+import { ConfirmModal } from '../../components/ConfirmModal';
+import { StatusBadge } from '../../components/StatusBadge';
+import { TicketPassCard } from '../../components/TicketPassCard';
+import { PageHeader } from '../../components/common/PageHeader';
+import { Skeleton } from '../../components/common/Skeleton';
+
+function formatCountdown(msRemaining: number): string {
+  if (msRemaining <= 0) return '00:00';
+  const totalSecs = Math.floor(msRemaining / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+export function CheckoutPage() {
+  const { orderId } = useParams<{ orderId: string }>();
+  const [searchParams] = useSearchParams();
+  const { isAuthenticated } = useAuth();
+  const { showToast } = useToast();
+  const confirmationRef = useRef<HTMLDivElement | null>(null);
+
+  const queryToken = searchParams.get('token');
+  const guestToken = queryToken || getGuestOrderToken(orderId);
+
+  useEffect(() => {
+    if (orderId && queryToken) {
+      saveGuestOrderToken(orderId, queryToken);
+    }
+  }, [orderId, queryToken]);
+
+  const [order, setOrder] = useState<OrderSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(
+    () => `pay-${orderId ?? 'ord'}-${crypto.randomUUID()}`,
+  );
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const loadOrder = useCallback(async () => {
+    if (!orderId) return;
+    try {
+      setLoading(true);
+      const data = await ordersService.getById(orderId, guestToken);
+      setOrder(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Unable to load order.');
+    } finally {
+      setLoading(false);
+    }
+  }, [orderId, guestToken]);
+
+  useEffect(() => {
+    loadOrder();
+  }, [loadOrder]);
+
+  useEffect(() => {
+    if (order?.status !== 'PENDING' || !order.expiresAt) return;
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [order?.status, order?.expiresAt]);
+
+  async function handleMockPayment(simulateOutcome: 'SUCCEEDED' | 'FAILED') {
+    if (!order) return;
+    setPayError(null);
+    setProcessing(true);
+
+    try {
+      const result = await paymentsService.processOrderPayment(
+        order.id,
+        {
+          provider: 'MOCK',
+          idempotencyKey,
+          simulateOutcome,
+        },
+        guestToken,
+      );
+      setOrder(result.order);
+
+      if (result.payment.status === 'SUCCEEDED') {
+        showToast('Payment confirmed and QR passes issued!', { variant: 'success' });
+        window.setTimeout(() => animatePanelEnter(confirmationRef.current), 20);
+      } else {
+        setPayError(
+          result.payment.failureReason ||
+            'Simulated payment declined. You may retry before your reservation expires.',
+        );
+        setIdempotencyKey(`pay-${order.id}-${crypto.randomUUID()}`);
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Payment processing failed.';
+      setPayError(msg);
+      await loadOrder();
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  async function handleCancelOrder() {
+    if (!order) return;
+    try {
+      setCancelling(true);
+      const updated = await ordersService.cancel(
+        order.id,
+        'Cancelled at checkout',
+        guestToken,
+      );
+      setOrder(updated);
+      setConfirmCancel(false);
+      showToast('Order cancelled and seats released back to inventory.', {
+        variant: 'info',
+      });
+    } catch (err) {
+      setPayError(err instanceof ApiError ? err.message : 'Unable to cancel order.');
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Skeleton height={30} width="45%" />
+        <Skeleton height={160} />
+      </div>
+    );
+  }
+
+  if (error || !order) {
+    return (
+      <div>
+        <Link to="/events" className="btn btn-secondary" style={{ marginBottom: 16 }}>
+          <ArrowLeft size={16} />
+          <span>Back to Events</span>
+        </Link>
+        <AlertBanner variant="error" title="Order Unavailable" message={error || 'Order not found.'} />
+      </div>
+    );
+  }
+
+  const msRemaining = order.expiresAt
+    ? new Date(order.expiresAt).getTime() - nowMs
+    : 0;
+  const reservationExpired =
+    order.status === 'EXPIRED' ||
+    (order.status === 'PENDING' && Boolean(order.expiresAt) && msRemaining <= 0);
+
+  const isPaid = order.status === 'PAID';
+
+  return (
+    <div>
+      <PageHeader
+        title="Secure Checkout"
+        subtitle={`Order Reference: ${order.id} · Attendee: ${formatBuyerName(order)} (${formatBuyerEmail(order)})`}
+        actions={
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <StatusBadge
+              status={reservationExpired && order.status === 'PENDING' ? 'EXPIRED' : order.status}
+            />
+            {isAuthenticated ? (
+              <Link to="/my-account" className="btn btn-secondary btn-sm">
+                My Orders
+              </Link>
+            ) : (
+              <Link to="/events" className="btn btn-secondary btn-sm">
+                All Events
+              </Link>
+            )}
+          </div>
+        }
+      />
+
+      <div className="checkout-stepper">
+        <div className="checkout-step done">
+          <CheckCircle2 size={16} color="var(--color-primary)" />
+          <span>1. Reservation Locked</span>
+        </div>
+        <div className={`checkout-step ${isPaid ? 'done' : 'active'}`}>
+          <CreditCard size={16} color="var(--color-primary)" />
+          <span>2. Backend Payment Verification</span>
+        </div>
+        <div className={`checkout-step ${isPaid ? 'done' : ''}`}>
+          <QrCode size={16} color={isPaid ? 'var(--color-primary)' : 'var(--color-text-muted)'} />
+          <span>3. QR Passes Issued</span>
+        </div>
+      </div>
+
+      {order.status === 'PENDING' && order.expiresAt && !reservationExpired && (
+        <div className="alert alert-info">
+          <Clock size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <strong>Seats Reserved — Complete payment within {formatCountdown(msRemaining)}</strong>
+            <div style={{ fontSize: '0.86rem' }}>
+              Inventory is locked until {formatDateTime(order.expiresAt)}. Unpaid reservations release automatically.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reservationExpired && (
+        <AlertBanner
+          variant="warning"
+          title="Reservation Expired"
+          message="Your reservation window elapsed and seats were released. Please select tickets again from the event page."
+        />
+      )}
+
+      {payError && <AlertBanner variant="error" title="Payment Notice" message={payError} />}
+
+      {isPaid && (
+        <div ref={confirmationRef} className="alert alert-success">
+          <CheckCircle2 size={20} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <strong>Payment Verified &amp; Tickets Issued</strong>
+            <div style={{ fontSize: '0.88rem' }}>
+              Reference: <span className="code-chip">{order.paymentReference}</span> · Paid on{' '}
+              {formatDateTime(order.paidAt)}. Your QR passes are ready below and in your Ticket Wallet.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="detail-grid">
+        <div className="card card-padded">
+          <h2 className="card-title" style={{ marginBottom: 14 }}>
+            Order Summary
+          </h2>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {(order.items ?? []).map((item) => (
+              <div key={item.id} className="tier-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{item.ticketType.event.title}</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                      {item.ticketType.name} × {item.quantity} ({formatCurrency(item.unitPrice)} each)
+                    </div>
+                  </div>
+                  <strong style={{ color: 'var(--color-primary)' }}>
+                    {formatCurrency(item.subtotal)}
+                  </strong>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              marginTop: 18,
+              paddingTop: 14,
+              borderTop: '1px solid var(--color-border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '1.15rem',
+            }}
+          >
+            <strong>Total Amount</strong>
+            <strong style={{ color: 'var(--color-primary)' }}>
+              {formatCurrency(order.totalAmount)} {order.currency}
+            </strong>
+          </div>
+        </div>
+
+        <aside className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CreditCard size={18} color="var(--color-primary)" />
+            <h2 className="card-title">Payment Method</h2>
+          </div>
+
+          {order.status === 'PENDING' && !reservationExpired ? (
+            <>
+              <div className="tier-card selected">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <strong style={{ fontSize: '0.95rem' }}>Development Mock Provider</strong>
+                  <span className="badge badge-warning">DEV ONLY</span>
+                </div>
+                <p style={{ fontSize: '0.83rem', color: 'var(--color-text-secondary)', marginBottom: 14 }}>
+                  Simulated payment gateway for local &amp; QA verification. The backend validates status and issues QR passes idempotently.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-lg"
+                    disabled={processing}
+                    onClick={() => handleMockPayment('SUCCEEDED')}
+                  >
+                    <ShieldCheck size={17} />
+                    <span>
+                      {processing
+                        ? 'Verifying on Backend...'
+                        : `Confirm Payment (${formatCurrency(order.totalAmount)})`}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={processing}
+                    onClick={() => handleMockPayment('FAILED')}
+                  >
+                    <AlertTriangle size={14} />
+                    <span>Simulate Declined Payment</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="tier-card" style={{ opacity: 0.8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <strong style={{ fontSize: '0.92rem' }}>Bakong KHQR (Planned)</strong>
+                  <span className="badge">NOT CONFIGURED</span>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>
+                  KHQR provider contract is prepared on the backend and requires NBC Bakong merchant credentials before activation.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={processing || cancelling}
+                onClick={() => setConfirmCancel(true)}
+              >
+                <XCircle size={15} />
+                <span>Cancel Reservation &amp; Release Seats</span>
+              </button>
+            </>
+          ) : isPaid ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {isAuthenticated ? (
+                <Link to="/my-tickets" className="btn btn-primary btn-lg">
+                  <QrCode size={17} />
+                  <span>Open My Ticket Wallet</span>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-lg"
+                  onClick={() => window.print()}
+                >
+                  <Printer size={17} />
+                  <span>Print / Save QR Passes</span>
+                </button>
+              )}
+              <Link to="/events" className="btn btn-secondary">
+                Browse More Events
+              </Link>
+            </div>
+          ) : (
+            <Link to="/events" className="btn btn-primary">
+              Browse Available Events
+            </Link>
+          )}
+        </aside>
+      </div>
+
+      {isPaid && order.tickets && order.tickets.length > 0 && (
+        <section style={{ marginTop: 32 }}>
+          <h2 className="section-title" style={{ marginBottom: 16 }}>
+            Issued Digital QR Passes ({order.tickets.length})
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {order.tickets.map((ticket) => (
+              <TicketPassCard key={ticket.id} ticket={ticket} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <ConfirmModal
+        open={confirmCancel}
+        title="Cancel Reservation"
+        message="Are you sure you want to cancel this pending order and release your reserved seats?"
+        confirmLabel="Cancel Order"
+        busy={cancelling}
+        onConfirm={handleCancelOrder}
+        onCancel={() => setConfirmCancel(false)}
+      />
+    </div>
+  );
+}

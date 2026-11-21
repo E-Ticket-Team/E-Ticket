@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -17,16 +19,24 @@ async function bootstrap() {
   const corsOrigin = configService.get<string>('corsOrigin', '*');
   const apiPrefix = configService.get<string>('apiPrefix', 'api/v1');
 
-  // CORS Configuration
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
+  app.use(cookieParser());
+
+  // CORS Configuration supporting HttpOnly cookie credentials
   const allowedOrigins =
     corsOrigin === '*'
-      ? '*'
+      ? true
       : corsOrigin.split(',').map((origin) => origin.trim());
 
   app.enableCors({
     origin: allowedOrigins,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    credentials: corsOrigin !== '*',
+    credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
@@ -65,14 +75,15 @@ async function bootstrap() {
     .setDescription(
       'REST API documentation for the Universal E-Ticketing Platform backend',
     )
-    .setVersion('1.0.0')
+    .setVersion('1.1.0')
     .addTag('Health', 'Health checks and database connectivity monitoring')
-    .addTag(
-      'Auth',
-      'Authentication and registration endpoints for customers and organizations',
-    )
-    .addTag('Events', 'Event management endpoints')
-    .addTag('Tickets', 'Ticket tier and validation endpoints')
+    .addTag('Auth', 'Authentication, HttpOnly session cookies, and registration')
+    .addTag('Events', 'Event discovery, pagination, and organizer event management')
+    .addTag('Tickets', 'Ticket tier CRUD, digital passes, and atomic gate check-in')
+    .addTag('Orders', 'Atomic inventory reservation, order tracking, and cancellation')
+    .addTag('Payments', 'Idempotent payment processing and webhook handling')
+    .addTag('Organizer', 'Organizer dashboard analytics, attendees, and scanner assignment')
+    .addTag('Admin', 'Administrator platform monitoring and user management')
     .addBearerAuth(
       {
         type: 'http',
@@ -96,4 +107,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-

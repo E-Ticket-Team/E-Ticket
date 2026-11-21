@@ -5,7 +5,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
 } from 'class-validator';
 
 export enum EventStatusEnum {
@@ -60,10 +59,4 @@ export class CreateEventDto {
   @IsEnum(EventStatusEnum)
   @IsOptional()
   status?: EventStatusEnum;
-
-  @ApiProperty({ example: 'a0000000-0000-0000-0000-000000000001' })
-  @IsString()
-  @IsNotEmpty()
-  organizerId: string;
 }
-

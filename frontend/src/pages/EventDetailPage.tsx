@@ -1,15 +1,23 @@
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Calendar,
+  Check,
+  ChevronRight,
   Edit3,
   Layers,
   MapPin,
+  ShoppingBag,
   Ticket,
   User,
 } from 'lucide-react';
-import { api, ApiError } from '../services/api';
+import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../contexts/ToastContext';
+import { ApiError } from '../services/api';
+import { eventsService } from '../services/events.service';
+import { ordersService } from '../services/orders.service';
+import { ticketsService } from '../services/tickets.service';
 import type { EventItem, TicketType } from '../types/api';
 import {
   formatCurrency,
@@ -17,16 +25,32 @@ import {
   formatDateTime,
   formatPersonName,
 } from '../utils/format';
+import { saveGuestOrderToken } from '../utils/guestOrders';
 import { AlertBanner } from '../components/AlertBanner';
+import { EventCard } from '../components/EventCard';
 import { StatusBadge } from '../components/StatusBadge';
+import { Skeleton } from '../components/common/Skeleton';
+import { QuantitySelector } from '../components/tickets/QuantitySelector';
 
 export function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user, isAuthenticated } = useAuth();
+  const { showToast } = useToast();
+
   const [event, setEvent] = useState<EventItem | null>(null);
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
+  const [relatedEvents, setRelatedEvents] = useState<EventItem[]>([]);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [creatingOrder, setCreatingOrder] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orderError, setOrderError] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -35,13 +59,18 @@ export function EventDetailPage() {
       if (!id) return;
       try {
         setLoading(true);
-        const [evData, tiersData] = await Promise.all([
-          api.getEvent(id),
-          api.getTicketTypesByEvent(id),
+        const [evData, tiersData, relatedPage] = await Promise.all([
+          eventsService.getById(id),
+          ticketsService.getTypesByEvent(id),
+          eventsService.list({ page: 1, limit: 4, status: 'PUBLISHED' }),
         ]);
         if (active) {
           setEvent(evData);
           setTicketTypes(tiersData);
+          setRelatedEvents(
+            relatedPage.items.filter((item) => item.id !== evData.id).slice(0, 3),
+          );
+          setQuantities({});
           setError(null);
         }
       } catch (err) {
@@ -59,10 +88,93 @@ export function EventDetailPage() {
     };
   }, [id]);
 
+  const selectedItems = useMemo(() => {
+    return ticketTypes
+      .map((tier) => ({
+        tier,
+        quantity: quantities[tier.id] ?? 0,
+      }))
+      .filter((entry) => entry.quantity > 0);
+  }, [ticketTypes, quantities]);
+
+  const totalSelectedCount = selectedItems.reduce((sum, i) => sum + i.quantity, 0);
+  const subtotalCents = selectedItems.reduce(
+    (sum, i) => sum + Math.round(Number(i.tier.price) * 100) * i.quantity,
+    0,
+  );
+
+  const canManageEvent =
+    user?.role === 'ADMIN' ||
+    (user?.role === 'ORGANIZER' && event?.organizerId === user.id);
+
+  const isEventOpenForSale =
+    event?.status === 'PUBLISHED' && new Date(event.endDate) > new Date();
+
+  async function handleCheckout() {
+    setOrderError(null);
+    if (selectedItems.length === 0) return;
+
+    if (user?.role === 'SCANNER') {
+      setOrderError('Scanner accounts cannot purchase tickets.');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      const cleanName = guestName.trim();
+      const cleanEmail = guestEmail.trim().toLowerCase();
+      if (cleanName.length < 2) {
+        setOrderError('Please enter your full name for ticket delivery.');
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        setOrderError('Please enter a valid email address to receive your QR tickets.');
+        return;
+      }
+    }
+
+    try {
+      setCreatingOrder(true);
+      const order = await ordersService.create({
+        items: selectedItems.map((i) => ({
+          ticketTypeId: i.tier.id,
+          quantity: i.quantity,
+        })),
+        ...(!isAuthenticated
+          ? {
+              guestName: guestName.trim(),
+              guestEmail: guestEmail.trim().toLowerCase(),
+              guestPhone: guestPhone.trim() || undefined,
+            }
+          : {}),
+      });
+
+      if (order.guestToken) {
+        saveGuestOrderToken(order.id, order.guestToken);
+      }
+
+      showToast('Seats reserved for 15 minutes. Complete checkout below.', {
+        variant: 'success',
+      });
+      navigate(
+        order.guestToken
+          ? `/checkout/${order.id}?token=${encodeURIComponent(order.guestToken)}`
+          : `/checkout/${order.id}`,
+      );
+    } catch (err) {
+      setOrderError(
+        err instanceof ApiError ? err.message : 'Could not reserve tickets.',
+      );
+    } finally {
+      setCreatingOrder(false);
+    }
+  }
+
   if (loading) {
     return (
-      <div className="card card-padded" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-        Loading event details...
+      <div className="card card-padded" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Skeleton height={300} />
+        <Skeleton height={34} width="55%" />
+        <Skeleton height={20} width="40%" />
       </div>
     );
   }
@@ -87,6 +199,16 @@ export function EventDetailPage() {
 
   return (
     <div>
+      <nav className="breadcrumbs" aria-label="Breadcrumb">
+        <Link to="/">Discover</Link>
+        <ChevronRight size={14} />
+        <Link to="/events">Events</Link>
+        <ChevronRight size={14} />
+        <span style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
+          {event.title}
+        </span>
+      </nav>
+
       <div
         style={{
           display: 'flex',
@@ -94,18 +216,20 @@ export function EventDetailPage() {
           alignItems: 'center',
           gap: 12,
           flexWrap: 'wrap',
-          marginBottom: 20,
+          marginBottom: 18,
         }}
       >
-        <Link to="/events" className="btn btn-secondary">
-          <ArrowLeft size={16} />
+        <Link to="/events" className="btn btn-secondary btn-sm">
+          <ArrowLeft size={15} />
           <span>All Events</span>
         </Link>
 
-        <Link to={`/organizer/events/${event.id}/edit`} className="btn btn-primary">
-          <Edit3 size={16} />
-          <span>Edit Event &amp; Tiers</span>
-        </Link>
+        {canManageEvent && (
+          <Link to={`/organizer/events/${event.id}/edit`} className="btn btn-primary btn-sm">
+            <Edit3 size={15} />
+            <span>Edit Event &amp; Tiers</span>
+          </Link>
+        )}
       </div>
 
       <div className="detail-banner">
@@ -117,8 +241,8 @@ export function EventDetailPage() {
           />
         ) : (
           <div className="event-banner-fallback">
-            <Ticket size={44} />
-            <span>{event.category || 'Universal E-Ticket Event'}</span>
+            <Ticket size={46} />
+            <span>{event.category || 'Universal E-Ticket Experience'}</span>
           </div>
         )}
       </div>
@@ -130,36 +254,35 @@ export function EventDetailPage() {
             <StatusBadge status={event.status} />
           </div>
 
-          <h1 className="page-title" style={{ marginBottom: 16 }}>
+          <h1 className="page-title" style={{ marginBottom: 18 }}>
             {event.title}
           </h1>
 
-          <div className="event-meta" style={{ fontSize: '0.95rem', gap: 10, marginBottom: 22 }}>
+          <div className="event-meta" style={{ fontSize: '0.95rem', gap: 10, marginBottom: 24 }}>
             <div className="event-meta-row">
-              <Calendar size={17} />
-              <span>{formatDateRange(event.startDate, event.endDate)}</span>
+              <Calendar size={17} color="var(--color-primary)" />
+              <span>{formatDateRange(event.startDate, event.endDate)} (ICT)</span>
             </div>
             <div className="event-meta-row">
-              <MapPin size={17} />
+              <MapPin size={17} color="var(--color-primary)" />
               <span>
                 {event.venue}
                 {event.location ? ` · ${event.location}` : ''}
               </span>
             </div>
             <div className="event-meta-row">
-              <User size={17} />
+              <User size={17} color="var(--color-primary)" />
               <span>
                 Organized by <strong>{formatPersonName(event.organizer)}</strong>
-                {event.organizer?.email ? ` (${event.organizer.email})` : ''}
               </span>
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: 20 }}>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 10 }}>
+          <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 22 }}>
+            <h2 className="card-title" style={{ marginBottom: 10 }}>
               About This Event
             </h2>
-            <p style={{ color: 'var(--text-secondary)', whiteSpace: 'pre-line' }}>
+            <p style={{ color: 'var(--color-text-secondary)', whiteSpace: 'pre-line' }}>
               {event.description || 'No description has been added for this event yet.'}
             </p>
           </div>
@@ -168,32 +291,30 @@ export function EventDetailPage() {
             style={{
               marginTop: 24,
               paddingTop: 18,
-              borderTop: '1px solid var(--border-color)',
+              borderTop: '1px solid var(--color-border)',
               display: 'grid',
               gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
               gap: 12,
-              fontSize: '0.85rem',
-              color: 'var(--text-muted)',
+              fontSize: '0.86rem',
+              color: 'var(--color-text-secondary)',
             }}
           >
             <div>
-              <strong style={{ color: 'var(--text-secondary)' }}>Starts:</strong>{' '}
-              {formatDateTime(event.startDate)}
+              <div className="meta-caption">Starts</div>
+              <div style={{ fontWeight: 600, marginTop: 2 }}>
+                {formatDateTime(event.startDate)}
+              </div>
             </div>
             <div>
-              <strong style={{ color: 'var(--text-secondary)' }}>Ends:</strong>{' '}
-              {formatDateTime(event.endDate)}
-            </div>
-            <div>
-              <strong style={{ color: 'var(--text-secondary)' }}>Event ID:</strong>{' '}
-              <span className="code-chip" style={{ fontSize: '0.78rem' }}>
-                {event.id}
-              </span>
+              <div className="meta-caption">Ends</div>
+              <div style={{ fontWeight: 600, marginTop: 2 }}>
+                {formatDateTime(event.endDate)}
+              </div>
             </div>
           </div>
         </div>
 
-        <aside className="card card-padded">
+        <aside className="card card-padded" style={{ position: 'sticky', top: 94 }}>
           <div
             style={{
               display: 'flex',
@@ -204,43 +325,43 @@ export function EventDetailPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Layers size={18} color="var(--brand-primary)" />
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Ticket Tiers</h2>
+              <Layers size={18} color="var(--color-primary)" />
+              <h2 className="card-title">Select Tickets</h2>
             </div>
             <span className="badge">{ticketTypes.length} tiers</span>
           </div>
 
+          {!isEventOpenForSale && (
+            <AlertBanner
+              variant="warning"
+              message={`Ticket sales are closed (Event status: ${event.status}).`}
+            />
+          )}
+
+          {orderError && <AlertBanner variant="error" message={orderError} />}
+
           {ticketTypes.length === 0 ? (
-            <div
-              style={{
-                backgroundColor: 'var(--bg-subtle)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-md)',
-                padding: 18,
-                textAlign: 'center',
-              }}
-            >
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 12 }}>
+            <div className="tier-card" style={{ textAlign: 'center' }}>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>
                 No ticket tiers have been configured for this event yet.
               </p>
-              <Link
-                to={`/organizer/events/${event.id}/edit`}
-                className="btn btn-primary btn-sm"
-              >
-                Add Ticket Tier
-              </Link>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {ticketTypes.map((tier) => {
-                const sold = Math.max(0, tier.totalQuantity - tier.remainingQuantity);
+                const maxSelectable = Math.min(20, tier.remainingQuantity);
+                const qty = quantities[tier.id] ?? 0;
+                const isSelected = qty > 0;
                 const pct =
                   tier.totalQuantity > 0
                     ? Math.round((tier.remainingQuantity / tier.totalQuantity) * 100)
                     : 0;
 
                 return (
-                  <div key={tier.id} className="tier-card">
+                  <div
+                    key={tier.id}
+                    className={`tier-card ${isSelected ? 'selected' : ''}`}
+                  >
                     <div
                       style={{
                         display: 'flex',
@@ -250,12 +371,15 @@ export function EventDetailPage() {
                         marginBottom: 4,
                       }}
                     >
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{tier.name}</h3>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        {isSelected && <Check size={15} color="var(--color-primary)" />}
+                        <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>{tier.name}</h3>
+                      </div>
                       <span
                         style={{
                           fontWeight: 800,
                           fontSize: '1.08rem',
-                          color: 'var(--brand-primary)',
+                          color: 'var(--color-primary)',
                         }}
                       >
                         {formatCurrency(tier.price)}
@@ -265,8 +389,8 @@ export function EventDetailPage() {
                     {tier.description && (
                       <p
                         style={{
-                          fontSize: '0.85rem',
-                          color: 'var(--text-secondary)',
+                          fontSize: '0.84rem',
+                          color: 'var(--color-text-secondary)',
                           marginBottom: 10,
                         }}
                       >
@@ -278,15 +402,26 @@ export function EventDetailPage() {
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
-                        fontSize: '0.8rem',
-                        color: 'var(--text-muted)',
-                        fontWeight: 600,
+                        alignItems: 'center',
+                        gap: 10,
+                        marginTop: 10,
                       }}
                     >
-                      <span>{tier.remainingQuantity} remaining</span>
-                      <span>
-                        {sold} / {tier.totalQuantity} issued
+                      <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                        {tier.remainingQuantity > 0
+                          ? `${tier.remainingQuantity} available`
+                          : 'Sold Out'}
                       </span>
+
+                      <QuantitySelector
+                        value={qty}
+                        max={maxSelectable}
+                        disabled={!isEventOpenForSale || tier.remainingQuantity <= 0}
+                        label={tier.name}
+                        onChange={(nextQty) =>
+                          setQuantities((prev) => ({ ...prev, [tier.id]: nextQty }))
+                        }
+                      />
                     </div>
 
                     <div className="progress-track">
@@ -298,25 +433,163 @@ export function EventDetailPage() {
             </div>
           )}
 
-          <div
-            style={{
-              marginTop: 18,
-              paddingTop: 16,
-              borderTop: '1px solid var(--border-color)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-            }}
-          >
-            <Link to="/tickets" className="btn btn-secondary" style={{ width: '100%' }}>
-              Look Up an Existing Ticket
-            </Link>
-            <Link to="/scanner" className="btn btn-dark" style={{ width: '100%' }}>
-              Verify Ticket at Gate
-            </Link>
-          </div>
+          {ticketTypes.length > 0 && (
+            <div
+              style={{
+                marginTop: 18,
+                paddingTop: 16,
+                borderTop: '1px solid var(--color-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              {selectedItems.map((entry) => (
+                <div
+                  key={entry.tier.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '0.86rem',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  <span>
+                    {entry.tier.name} × {entry.quantity}
+                  </span>
+                  <strong>
+                    {formatCurrency(
+                      (Math.round(Number(entry.tier.price) * 100) * entry.quantity) / 100,
+                    )}
+                  </strong>
+                </div>
+              ))}
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '1.08rem',
+                  paddingTop: selectedItems.length > 0 ? 8 : 0,
+                  borderTop: selectedItems.length > 0 ? '1px solid var(--color-border)' : 'none',
+                }}
+              >
+                <span style={{ fontWeight: 700 }}>
+                  Total ({totalSelectedCount} ticket{totalSelectedCount === 1 ? '' : 's'})
+                </span>
+                <strong style={{ color: 'var(--color-primary)' }}>
+                  {formatCurrency(subtotalCents / 100)}
+                </strong>
+              </div>
+
+              {!isAuthenticated && totalSelectedCount > 0 && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: 14,
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--color-ivory)',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: '0.88rem', color: 'var(--color-forest-dark)' }}>
+                      Guest Ticket Details
+                    </strong>
+                    <Link
+                      to="/login"
+                      state={{ from: location }}
+                      style={{ fontSize: '0.76rem', color: 'var(--color-primary)', fontWeight: 600 }}
+                    >
+                      Or sign in
+                    </Link>
+                  </div>
+
+                  <div className="input-group">
+                    <label htmlFor="guest-name" className="input-label">
+                      Full Name *
+                    </label>
+                    <input
+                      id="guest-name"
+                      type="text"
+                      className="input"
+                      placeholder="e.g. Dara Sok"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label htmlFor="guest-email" className="input-label">
+                      Email Address (for QR pass) *
+                    </label>
+                    <input
+                      id="guest-email"
+                      type="email"
+                      className="input"
+                      placeholder="you@gmail.com"
+                      value={guestEmail}
+                      onChange={(e) => setGuestEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label htmlFor="guest-phone" className="input-label">
+                      Phone Number (optional)
+                    </label>
+                    <input
+                      id="guest-phone"
+                      type="tel"
+                      className="input"
+                      placeholder="+855 12 345 678"
+                      value={guestPhone}
+                      onChange={(e) => setGuestPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="btn btn-primary btn-lg"
+                style={{ marginTop: 6 }}
+                disabled={!isEventOpenForSale || totalSelectedCount === 0 || creatingOrder}
+                onClick={handleCheckout}
+              >
+                <ShoppingBag size={17} />
+                <span>
+                  {creatingOrder
+                    ? 'Reserving Seats...'
+                    : !isAuthenticated
+                      ? 'Buy Tickets Without Login'
+                      : 'Continue to Checkout'}
+                </span>
+              </button>
+            </div>
+          )}
         </aside>
       </div>
+
+      {relatedEvents.length > 0 && (
+        <section style={{ marginTop: 52 }}>
+          <div className="section-header">
+            <div>
+              <h2 className="section-title">More Upcoming Experiences</h2>
+              <p className="page-subtitle">Explore other live events currently open for booking.</p>
+            </div>
+          </div>
+          <div className="grid-3">
+            {relatedEvents.map((ev) => (
+              <EventCard key={ev.id} event={ev} />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Search, Ticket } from 'lucide-react';
-import { api, ApiError } from '../services/api';
+import { ApiError } from '../services/api';
+import { ticketsService } from '../services/tickets.service';
 import type { TicketDetail } from '../types/api';
-import { SAMPLE_TICKET_CODE } from '../utils/format';
 import { AlertBanner } from '../components/AlertBanner';
 import { EmptyState } from '../components/EmptyState';
 import { TicketPassCard } from '../components/TicketPassCard';
+import { PageHeader } from '../components/common/PageHeader';
 
 export function TicketLookupPage() {
   const { code } = useParams<{ code: string }>();
@@ -30,7 +31,7 @@ export function TicketLookupPage() {
       try {
         setLoading(true);
         setError(null);
-        const data = await api.getTicketByCode(ticketCode);
+        const data = await ticketsService.getByCode(ticketCode);
         if (active) setTicket(data);
       } catch (err) {
         if (active) {
@@ -61,14 +62,10 @@ export function TicketLookupPage() {
 
   return (
     <div>
-      <div className="section-header">
-        <div>
-          <h1 className="page-title">Digital Ticket Lookup</h1>
-          <p className="page-subtitle">
-            Enter a ticket code to view its live status, event details, and scannable QR pass.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Authorized Ticket Inspection"
+        subtitle="Look up an issued ticket code (restricted to ticket owner, event organizer, assigned scanner, or admin)."
+      />
 
       <form onSubmit={handleSubmit} className="filter-bar">
         <div className="search-input-wrap">
@@ -76,7 +73,7 @@ export function TicketLookupPage() {
           <input
             type="text"
             className="input"
-            placeholder={`Enter ticket code (e.g. ${SAMPLE_TICKET_CODE})`}
+            placeholder="Enter ticket code (e.g. TKT-2026-VIP-001)"
             value={inputCode}
             onChange={(e) => setInputCode(e.target.value)}
             required
@@ -85,37 +82,21 @@ export function TicketLookupPage() {
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? 'Searching...' : 'Find Ticket'}
         </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => navigate(`/tickets/${encodeURIComponent(SAMPLE_TICKET_CODE)}`)}
-        >
-          Try Sample ({SAMPLE_TICKET_CODE})
-        </button>
       </form>
 
-      {error && <AlertBanner variant="error" title="Ticket Not Found" message={error} />}
+      {error && <AlertBanner variant="error" title="Ticket Unavailable" message={error} />}
 
       {loading ? (
-        <div className="card card-padded" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+        <div className="card card-padded" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
           Retrieving ticket pass...
         </div>
       ) : ticket ? (
-        <TicketPassCard ticket={ticket} />
+        <TicketPassCard ticket={ticket} showValidateButton={false} />
       ) : !error ? (
         <EmptyState
           icon={<Ticket size={24} />}
-          title="Look up any issued ticket"
-          description={`Enter a ticket code above or open the seeded sample pass (${SAMPLE_TICKET_CODE}) to preview the digital QR ticket.`}
-          action={
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => navigate(`/tickets/${encodeURIComponent(SAMPLE_TICKET_CODE)}`)}
-            >
-              Load Sample Pass
-            </button>
-          }
+          title="Enter a ticket code to inspect"
+          description="Only authorized owners, organizers, and gate staff can inspect ticket details."
         />
       ) : null}
     </div>

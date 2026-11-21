@@ -1,19 +1,18 @@
 import type {
   ApiErrorEnvelope,
   ApiSuccessEnvelope,
-  CreateEventPayload,
-  CreateTicketTypePayload,
-  EventItem,
   HealthResponse,
-  TicketDetail,
-  TicketType,
-  UpdateEventPayload,
-  ValidateTicketResponse,
 } from '../types/api';
 
 const RAW_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
-const BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
-const API_V1 = `${BASE_URL}/api/v1`;
+export const BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
+export const API_V1 = `${BASE_URL}/api/v1`;
+
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
 
 export class ApiError extends Error {
   statusCode: number;
@@ -30,13 +29,19 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+export async function apiRequest<T>(
+  url: string,
+  options?: RequestInit & { skipUnauthorizedCallback?: boolean },
+): Promise<T> {
+  const { skipUnauthorizedCallback, ...fetchOptions } = options ?? {};
+
   const response = await fetch(url, {
-    ...options,
+    ...fetchOptions,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      ...(options?.headers ?? {}),
+      ...(fetchOptions.headers ?? {}),
     },
   });
 
@@ -47,6 +52,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const text = await response.text();
   if (!text) {
     if (!response.ok) {
+      if (response.status === 401 && !skipUnauthorizedCallback && unauthorizedHandler) {
+        unauthorizedHandler();
+      }
       throw new ApiError(response.status, response.statusText, 'Request failed');
     }
     return undefined as T;
@@ -64,6 +72,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !skipUnauthorizedCallback && unauthorizedHandler) {
+      unauthorizedHandler();
+    }
     const errPayload = parsed as Partial<ApiErrorEnvelope>;
     throw new ApiError(
       errPayload.statusCode ?? response.status,
@@ -85,71 +96,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return parsed as T;
 }
 
-export const api = {
-  // Health endpoint (not wrapped in TransformInterceptor)
-  async getHealth(): Promise<HealthResponse> {
-    return request<HealthResponse>(`${BASE_URL}/health`);
-  },
-
-  // Events
-  async listEvents(filters?: { category?: string; status?: string }): Promise<EventItem[]> {
-    const params = new URLSearchParams();
-    if (filters?.category && filters.category.trim()) {
-      params.set('category', filters.category.trim());
-    }
-    if (filters?.status && filters.status.trim()) {
-      params.set('status', filters.status.trim());
-    }
-    const qs = params.toString();
-    return request<EventItem[]>(`${API_V1}/events${qs ? `?${qs}` : ''}`);
-  },
-
-  async getEvent(id: string): Promise<EventItem> {
-    return request<EventItem>(`${API_V1}/events/${encodeURIComponent(id)}`);
-  },
-
-  async createEvent(payload: CreateEventPayload): Promise<EventItem> {
-    return request<EventItem>(`${API_V1}/events`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  async updateEvent(id: string, payload: UpdateEventPayload): Promise<EventItem> {
-    return request<EventItem>(`${API_V1}/events/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  async deleteEvent(id: string): Promise<void> {
-    return request<void>(`${API_V1}/events/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-  },
-
-  // Tickets & Ticket Types
-  async getTicketTypesByEvent(eventId: string): Promise<TicketType[]> {
-    return request<TicketType[]>(
-      `${API_V1}/tickets/types/event/${encodeURIComponent(eventId)}`,
-    );
-  },
-
-  async createTicketType(payload: CreateTicketTypePayload): Promise<TicketType> {
-    return request<TicketType>(`${API_V1}/tickets/types`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  async getTicketByCode(code: string): Promise<TicketDetail> {
-    return request<TicketDetail>(`${API_V1}/tickets/${encodeURIComponent(code.trim())}`);
-  },
-
-  async validateTicket(ticketCode: string): Promise<ValidateTicketResponse> {
-    return request<ValidateTicketResponse>(`${API_V1}/tickets/validate`, {
-      method: 'POST',
-      body: JSON.stringify({ ticketCode: ticketCode.trim() }),
+export const healthApi = {
+  getHealth(): Promise<HealthResponse> {
+    return apiRequest<HealthResponse>(`${BASE_URL}/health`, {
+      skipUnauthorizedCallback: true,
     });
   },
 };

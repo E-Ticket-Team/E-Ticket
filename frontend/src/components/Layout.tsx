@@ -1,42 +1,49 @@
-import { useEffect, useState } from 'react';
-import { Outlet } from 'react-router-dom';
-import { api } from '../services/api';
-import type { HealthResponse } from '../types/api';
-import { Navbar } from './Navbar';
+import { useRef } from 'react';
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import { useGSAP } from '../animations/gsap';
+import { runPageEntrance } from '../animations/page-animations';
+import { useAuth } from '../hooks/useAuth';
+import { AlertBanner } from './AlertBanner';
 import { Footer } from './Footer';
+import { Navbar } from './Navbar';
 
 export function Layout() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthLoading, setHealthLoading] = useState(true);
+  const { sessionExpired, clearSessionExpired } = useAuth();
+  const location = useLocation();
+  const routeContainerRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    let active = true;
-
-    async function checkHealth() {
-      try {
-        const res = await api.getHealth();
-        if (active) setHealth(res);
-      } catch {
-        if (active) setHealth(null);
-      } finally {
-        if (active) setHealthLoading(false);
-      }
-    }
-
-    checkHealth();
-    const timer = window.setInterval(checkHealth, 30000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, []);
+  useGSAP(
+    () => {
+      runPageEntrance(routeContainerRef.current);
+    },
+    { dependencies: [location.pathname], scope: routeContainerRef },
+  );
 
   return (
     <div className="app-shell">
-      <Navbar health={health} healthLoading={healthLoading} />
+      <Navbar />
       <main className="main-content">
         <div className="container">
-          <Outlet />
+          {sessionExpired && (
+            <div style={{ marginBottom: 22 }}>
+              <AlertBanner
+                variant="warning"
+                title="Session Expired"
+                message="Your session has expired. Please sign in again to continue."
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Link to="/login" className="btn btn-primary btn-sm" onClick={clearSessionExpired}>
+                  Sign In Again
+                </Link>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={clearSessionExpired}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+          <div ref={routeContainerRef}>
+            <Outlet />
+          </div>
         </div>
       </main>
       <Footer />

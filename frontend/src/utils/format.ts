@@ -1,7 +1,6 @@
-import type { EventItem, TicketType, UserSummary } from '../types/api';
+import type { EventItem, TicketType, UserProfile, UserSummary } from '../types/api';
 
-export const DEFAULT_ORGANIZER_ID = 'a0000000-0000-0000-0000-000000000001';
-export const SAMPLE_TICKET_CODE = 'TKT-2026-VIP-001';
+const DISPLAY_TIMEZONE = 'Asia/Phnom_Penh';
 
 export function formatCurrency(value: string | number): string {
   const num = typeof value === 'string' ? Number(value) : value;
@@ -19,17 +18,22 @@ export function formatDateRange(startIso: string, endIso: string): string {
     return 'Date TBD';
   }
 
-  const sameDay =
-    start.getFullYear() === end.getFullYear() &&
-    start.getMonth() === end.getMonth() &&
-    start.getDate() === end.getDate();
+  const dayKey = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DISPLAY_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const sameDay = dayKey.format(start) === dayKey.format(end);
 
   const dateFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: DISPLAY_TIMEZONE,
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
   const timeFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: DISPLAY_TIMEZONE,
     hour: 'numeric',
     minute: '2-digit',
   });
@@ -46,6 +50,7 @@ export function formatDateTime(iso: string | null | undefined): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat('en-US', {
+    timeZone: DISPLAY_TIMEZONE,
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date);
@@ -61,10 +66,47 @@ export function toDatetimeLocalValue(iso: string | undefined): string {
   )}:${pad(d.getMinutes())}`;
 }
 
-export function formatPersonName(user?: UserSummary | null): string {
+export function formatPersonName(
+  user?: UserSummary | UserProfile | null,
+): string {
   if (!user) return 'Event Organizer';
+  if ('organizationName' in user && user.organizationName) {
+    return user.organizationName;
+  }
   const full = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
   return full || user.email;
+}
+
+export function formatBuyerName(
+  order?: {
+    user?: UserSummary | null;
+    guestName?: string | null;
+    guestEmail?: string | null;
+  } | null,
+): string {
+  if (!order) return 'Guest Attendee';
+  if (order.user) return formatPersonName(order.user);
+  return order.guestName || order.guestEmail || 'Guest Attendee';
+}
+
+export function formatBuyerEmail(
+  order?: {
+    user?: UserSummary | null;
+    guestEmail?: string | null;
+  } | null,
+): string {
+  if (!order) return '—';
+  return order.user?.email || order.guestEmail || '—';
+}
+
+export function formatBuyerPhone(
+  order?: {
+    user?: UserSummary | null;
+    guestPhone?: string | null;
+  } | null,
+): string {
+  if (!order) return '—';
+  return order.user?.phoneNumber || order.guestPhone || '—';
 }
 
 export function getLowestPrice(ticketTypes?: TicketType[]): number | null {

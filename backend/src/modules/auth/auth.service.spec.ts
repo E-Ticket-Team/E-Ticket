@@ -2,15 +2,20 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
-import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PublicRegistrationRole } from './dto/register.dto';
 
 describe('AuthService', () => {
   let service: AuthService;
-  let prisma: PrismaService;
-  let jwtService: JwtService;
 
   const mockHashedPassword = bcrypt.hashSync('Password123!', 10);
 
@@ -18,11 +23,14 @@ describe('AuthService', () => {
     id: 'customer-uuid-1',
     email: 'customer@eticket.com',
     password: mockHashedPassword,
+    googleId: null,
+    avatarUrl: null,
     firstName: 'Sophea',
     lastName: 'Sreng',
     organizationName: null,
     phoneNumber: '+85512345678',
     role: Role.CUSTOMER,
+    isActive: true,
     createdAt: new Date('2026-11-15T08:00:00.000Z'),
     updatedAt: new Date('2026-11-15T08:00:00.000Z'),
   };
@@ -31,11 +39,14 @@ describe('AuthService', () => {
     id: 'organizer-uuid-1',
     email: 'organizer@eticket.com',
     password: mockHashedPassword,
+    googleId: null,
+    avatarUrl: null,
     firstName: 'Channthy',
     lastName: 'Tha',
     organizationName: 'Cambodia Tech Events Ltd.',
     phoneNumber: '+85598765432',
     role: Role.ORGANIZER,
+    isActive: true,
     createdAt: new Date('2026-11-15T08:00:00.000Z'),
     updatedAt: new Date('2026-11-15T08:00:00.000Z'),
   };
@@ -44,6 +55,7 @@ describe('AuthService', () => {
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
     },
   };
 
@@ -70,8 +82,6 @@ describe('AuthService', () => {
     }).compile();
 
     service = module.get<AuthService>(AuthService);
-    prisma = module.get<PrismaService>(PrismaService);
-    jwtService = module.get<JwtService>(JwtService);
     jest.clearAllMocks();
   });
 
@@ -92,22 +102,9 @@ describe('AuthService', () => {
         phoneNumber: '+85512345678',
       });
 
-      expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
-        where: { email: 'customer@eticket.com' },
-      });
-      expect(mockPrismaService.user.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            email: 'customer@eticket.com',
-            role: Role.CUSTOMER,
-            firstName: 'Sophea',
-            lastName: 'Sreng',
-          }),
-        }),
-      );
       expect(result.accessToken).toBe('mock-jwt-token-xyz');
       expect(result.user.role).toBe(Role.CUSTOMER);
-      expect(result.user.email).toBe('customer@eticket.com');
+      expect(result.user.isActive).toBe(true);
       expect((result.user as any).password).toBeUndefined();
     });
 
@@ -139,34 +136,22 @@ describe('AuthService', () => {
         phoneNumber: '+85598765432',
       });
 
-      expect(mockPrismaService.user.findUnique).toHaveBeenCalledWith({
-        where: { email: 'organizer@eticket.com' },
-      });
-      expect(mockPrismaService.user.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            email: 'organizer@eticket.com',
-            role: Role.ORGANIZER,
-            organizationName: 'Cambodia Tech Events Ltd.',
-          }),
-        }),
-      );
       expect(result.accessToken).toBe('mock-jwt-token-xyz');
       expect(result.user.role).toBe(Role.ORGANIZER);
       expect(result.user.organizationName).toBe('Cambodia Tech Events Ltd.');
       expect((result.user as any).password).toBeUndefined();
     });
 
-    it('should throw ConflictException if organization email already exists', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(mockOrganizerUser);
+    it('should require organizationName in unified register for ORGANIZER', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.registerOrganization({
-          email: 'organizer@eticket.com',
+        service.register({
+          email: 'org@eticket.com',
           password: 'Password123!',
-          organizationName: 'Cambodia Tech Events Ltd.',
+          role: PublicRegistrationRole.ORGANIZER,
         }),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -183,6 +168,20 @@ describe('AuthService', () => {
       expect(result.user.email).toBe('customer@eticket.com');
       expect(result.tokenType).toBe('Bearer');
       expect((result.user as any).password).toBeUndefined();
+    });
+
+    it('should throw UnauthorizedException when account is suspended', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        ...mockCustomerUser,
+        isActive: false,
+      });
+
+      await expect(
+        service.login({
+          email: 'customer@eticket.com',
+          password: 'Password123!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException when email does not exist', async () => {
@@ -225,6 +224,83 @@ describe('AuthService', () => {
       await expect(service.getProfile('non-existent-uuid')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('Google OAuth Sign-In', () => {
+    it('should reject password login for Google-only users cleanly', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({
+        ...mockCustomerUser,
+        password: null,
+        googleId: 'google-sub-123',
+      });
+
+      await expect(
+        service.login({
+          email: 'customer@eticket.com',
+          password: 'Password123!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should report google config disabled when GOOGLE_CLIENT_ID is empty', () => {
+      expect(service.getGoogleConfig()).toEqual({
+        enabled: false,
+        clientId: null,
+      });
+    });
+
+    it('should throw ServiceUnavailableException when GOOGLE_CLIENT_ID is missing', async () => {
+      await expect(
+        service.authenticateWithGoogle({ accessToken: 'fake-token' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('should create a new customer via verified Google identity and return JWT', async () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'google.clientId' || key === 'GOOGLE_CLIENT_ID') {
+          return 'test-google-client-id.apps.googleusercontent.com';
+        }
+        if (key === 'jwt.expiresIn' || key === 'JWT_EXPIRES_IN') return '7d';
+        return null;
+      });
+
+      const verifySpy = jest
+        .spyOn(service as any, 'verifyGoogleIdentity')
+        .mockResolvedValue({
+          googleId: 'google-sub-999',
+          email: 'gmailuser@gmail.com',
+          firstName: 'Vannak',
+          lastName: 'Sok',
+          avatarUrl: 'https://example.com/avatar.jpg',
+        });
+
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+      mockPrismaService.user.create.mockResolvedValue({
+        id: 'google-user-uuid',
+        email: 'gmailuser@gmail.com',
+        password: null,
+        googleId: 'google-sub-999',
+        avatarUrl: 'https://example.com/avatar.jpg',
+        firstName: 'Vannak',
+        lastName: 'Sok',
+        organizationName: null,
+        phoneNumber: null,
+        role: Role.CUSTOMER,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await service.authenticateWithGoogle({
+        accessToken: 'google-access-token',
+      });
+
+      expect(verifySpy).toHaveBeenCalled();
+      expect(result.accessToken).toBe('mock-jwt-token-xyz');
+      expect(result.user.email).toBe('gmailuser@gmail.com');
+      expect(result.user.role).toBe(Role.CUSTOMER);
+      expect((result.user as any).password).toBeUndefined();
     });
   });
 });

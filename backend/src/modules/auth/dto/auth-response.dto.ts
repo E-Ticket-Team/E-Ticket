@@ -20,8 +20,14 @@ export class UserProfileDto {
   @ApiPropertyOptional({ example: '+85598765432' })
   phoneNumber?: string;
 
+  @ApiPropertyOptional({ example: 'https://lh3.googleusercontent.com/a/...' })
+  avatarUrl?: string;
+
   @ApiProperty({ enum: Role, example: Role.ORGANIZER })
   role: Role;
+
+  @ApiProperty({ example: true })
+  isActive: boolean;
 
   @ApiProperty({ example: '2026-11-15T08:00:00.000Z' })
   createdAt: Date;
