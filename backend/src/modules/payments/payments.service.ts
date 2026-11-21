@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -11,7 +10,6 @@ import {
   OrderStatus,
   PaymentProvider,
   PaymentStatus,
-  Role,
   TicketStatus,
 } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -60,7 +58,8 @@ export class PaymentsService {
   async processOrderPayment(
     orderId: string,
     dto: ProcessPaymentDto,
-    currentUser: AuthenticatedActor,
+    currentUser?: AuthenticatedActor | null,
+    guestToken?: string | null,
   ) {
     await this.ordersService.expireOrderIfStale(orderId);
 
@@ -73,12 +72,7 @@ export class PaymentsService {
       throw new NotFoundException(`Order with ID "${orderId}" not found`);
     }
 
-    if (
-      order.userId !== currentUser.id &&
-      currentUser.role !== Role.ADMIN
-    ) {
-      throw new ForbiddenException('You do not have permission to pay for this order');
-    }
+    this.ordersService.assertOrderAccess(order, currentUser, guestToken);
 
     const idempotencyKey =
       dto.idempotencyKey?.trim() || `pay-${orderId}-${crypto.randomUUID()}`;
@@ -96,6 +90,7 @@ export class PaymentsService {
       const hydratedOrder = await this.ordersService.getOrderById(
         orderId,
         currentUser,
+        guestToken,
       );
       return {
         idempotentReplay: true,
@@ -125,9 +120,14 @@ export class PaymentsService {
 
   async getOrderPayments(
     orderId: string,
-    currentUser: AuthenticatedActor,
+    currentUser?: AuthenticatedActor | null,
+    guestToken?: string | null,
   ) {
-    const order = await this.ordersService.getOrderById(orderId, currentUser);
+    const order = await this.ordersService.getOrderById(
+      orderId,
+      currentUser,
+      guestToken,
+    );
     return {
       orderId: order.id,
       orderStatus: order.status,

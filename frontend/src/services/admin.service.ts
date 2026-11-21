@@ -45,15 +45,33 @@ export const adminService = {
     );
   },
 
+  createUser(payload: {
+    email: string;
+    password: string;
+    firstName?: string;
+    lastName?: string;
+    organizationName?: string;
+    phoneNumber?: string;
+    role: Role;
+    isActive?: boolean;
+  }): Promise<AdminUserRow> {
+    return apiRequest<AdminUserRow>(`${API_V1}/admin/users`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   listOrders(params?: {
     page?: number;
     limit?: number;
     status?: OrderStatus | 'ALL';
+    search?: string;
   }): Promise<PaginatedResponse<OrderSummary>> {
     const qs = new URLSearchParams();
     if (params?.page) qs.set('page', String(params.page));
     if (params?.limit) qs.set('limit', String(params.limit));
     if (params?.status && params.status !== 'ALL') qs.set('status', params.status);
+    if (params?.search?.trim()) qs.set('search', params.search.trim());
     const queryStr = qs.toString();
     return apiRequest<PaginatedResponse<OrderSummary>>(
       `${API_V1}/admin/orders${queryStr ? `?${queryStr}` : ''}`,

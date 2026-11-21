@@ -126,7 +126,11 @@ export interface TicketDetail {
 
 export interface OrderSummary {
   id: string;
-  userId: string;
+  userId: string | null;
+  guestName?: string | null;
+  guestEmail?: string | null;
+  guestPhone?: string | null;
+  guestToken?: string;
   totalAmount: string | number;
   currency: string;
   status: OrderStatus;
@@ -294,17 +298,35 @@ export interface AdminOverviewData {
   events: {
     total: number;
     published: number;
+    draft?: number;
+    cancelled?: number;
+    completed?: number;
+    totalCapacity?: number;
+    remainingCapacity?: number;
+    soldCapacity?: number;
   };
   orders: {
     total: number;
     paid: number;
+    pending?: number;
+    cancelled?: number;
+    refunded?: number;
+    expired?: number;
     grossVolume: string;
     netVolume: string;
   };
   tickets: {
     totalIssued: number;
     checkedIn: number;
+    valid?: number;
+    cancelled?: number;
   };
+  salesOverTime?: Array<{
+    date: string;
+    paidOrders: number;
+    tickets: number;
+    revenue: string;
+  }>;
 }
 
 export interface AdminUserRow extends UserProfile {
@@ -312,6 +334,25 @@ export interface AdminUserRow extends UserProfile {
     events: number;
     orders: number;
   };
+}
+
+export interface OrganizerTeamMember {
+  user: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    phoneNumber: string | null;
+    role: Role;
+    isActive: boolean;
+  };
+  events: Array<{
+    id: string;
+    title: string;
+    venue: string;
+    status: EventStatus;
+    assignedAt: string;
+  }>;
 }
 
 export interface ApiSuccessEnvelope<T> {

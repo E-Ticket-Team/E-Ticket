@@ -27,6 +27,7 @@ describe('OrdersService', () => {
     order: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
+      findUnique: jest.fn().mockResolvedValue(null),
     },
     $transaction: jest.fn((cb: any) => cb(mockTx)),
   };
@@ -157,5 +158,67 @@ describe('OrdersService', () => {
       where: { id: 'tier-1' },
       data: { remainingQuantity: { increment: 2 } },
     });
+  });
+
+  it('requires guestName and guestEmail for guest orders and enforces guest token access', async () => {
+    await expect(
+      service.createOrder(null, {
+        items: [{ ticketTypeId: 'tier-1', quantity: 1 }],
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    mockTx.ticketType.findMany.mockResolvedValue([
+      {
+        id: 'tier-1',
+        name: 'General',
+        price: '25.00',
+        event: {
+          title: 'Live Event',
+          status: EventStatus.PUBLISHED,
+          endDate: new Date(Date.now() + 86400000),
+        },
+      },
+    ]);
+    mockTx.ticketType.updateMany.mockResolvedValue({ count: 1 });
+    let capturedHash: string | null = null;
+    mockTx.order.create.mockImplementation(async ({ data }: any) => {
+      capturedHash = data.guestTokenHash;
+      return {
+        id: 'ord-guest-1',
+        ...data,
+        tickets: [],
+      };
+    });
+
+    const created: any = await service.createOrder(null, {
+      items: [{ ticketTypeId: 'tier-1', quantity: 1 }],
+      guestName: 'Dara Sok',
+      guestEmail: 'dara@gmail.com',
+    });
+
+    expect(created.guestToken).toBeDefined();
+    expect(created.guestTokenHash).toBeUndefined();
+    expect(created.guestEmail).toBe('dara@gmail.com');
+
+    mockPrisma.order.findUnique.mockResolvedValue({
+      id: 'ord-guest-1',
+      userId: null,
+      guestName: 'Dara Sok',
+      guestEmail: 'dara@gmail.com',
+      guestTokenHash: capturedHash,
+      tickets: [],
+    });
+
+    const fetched = await service.getOrderById(
+      'ord-guest-1',
+      null,
+      created.guestToken,
+    );
+    expect(fetched.id).toBe('ord-guest-1');
+    expect((fetched as any).guestTokenHash).toBeUndefined();
+
+    await expect(
+      service.getOrderById('ord-guest-1', null, 'wrong-token'),
+    ).rejects.toThrow();
   });
 });

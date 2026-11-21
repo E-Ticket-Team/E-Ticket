@@ -6,8 +6,9 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
+  Matches,
 } from 'class-validator';
+import { CANONICAL_UUID_REGEX } from '../../../common/constants/uuid.constant';
 
 export class ProcessPaymentDto {
   @ApiPropertyOptional({
@@ -39,7 +40,10 @@ export class ProcessPaymentDto {
 
 export class PaymentWebhookDto {
   @ApiProperty({ example: 'd0000000-0000-0000-0000-000000000001' })
-  @IsUUID()
+  @IsString()
+  @Matches(CANONICAL_UUID_REGEX, {
+    message: 'orderId must be a valid UUID',
+  })
   orderId: string;
 
   @ApiProperty({ enum: PaymentProvider, example: PaymentProvider.MOCK })

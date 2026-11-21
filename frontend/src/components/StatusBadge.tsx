@@ -36,5 +36,19 @@ export function StatusBadge({ status }: { status: AnyStatus }) {
     variantClass = 'badge badge-info';
   }
 
-  return <span className={variantClass}>{normalized}</span>;
+  return (
+    <span className={variantClass}>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          backgroundColor: 'currentColor',
+          flexShrink: 0,
+        }}
+      />
+      {normalized}
+    </span>
+  );
 }

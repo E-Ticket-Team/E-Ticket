@@ -6,6 +6,7 @@ import { Layout } from './components/Layout';
 import { HomePage } from './pages/HomePage';
 import { EventsPage } from './pages/EventsPage';
 import { EventDetailPage } from './pages/EventDetailPage';
+import { OrganizationLandingPage } from './pages/OrganizationLandingPage';
 import { TicketLookupPage } from './pages/TicketLookupPage';
 import { ScannerPage } from './pages/ScannerPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -18,6 +19,7 @@ import { MyAccountPage } from './pages/customer/MyAccountPage';
 import { OrganizerDashboardPage } from './pages/organizer/OrganizerDashboardPage';
 import { EventFormPage } from './pages/organizer/EventFormPage';
 import { OrganizerAttendeesPage } from './pages/organizer/OrganizerAttendeesPage';
+import { OrganizerTeamPage } from './pages/organizer/OrganizerTeamPage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 
 export function App() {
@@ -35,10 +37,12 @@ export function App() {
             />
 
             <Route element={<Layout />}>
-              {/* Public Discovery */}
+              {/* Public Discovery & Guest-Capable Checkout */}
               <Route path="/" element={<HomePage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/events/:id" element={<EventDetailPage />} />
+              <Route path="/organization" element={<OrganizationLandingPage />} />
+              <Route path="/checkout/:orderId" element={<CheckoutPage />} />
 
               {/* Authenticated Customer Flows */}
               <Route
@@ -54,14 +58,6 @@ export function App() {
                 element={
                   <ProtectedRoute>
                     <MyTicketsPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/checkout/:orderId"
-                element={
-                  <ProtectedRoute>
-                    <CheckoutPage />
                   </ProtectedRoute>
                 }
               />
@@ -82,86 +78,100 @@ export function App() {
                 }
               />
 
-              {/* Gate Scanner */}
-              <Route
-                path="/scanner"
-                element={
-                  <ProtectedRoute allowedRoles={['SCANNER', 'ORGANIZER', 'ADMIN']}>
-                    <ScannerPage />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Organizer Studio */}
-              <Route
-                path="/organizer"
-                element={
-                  <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
-                    <OrganizerDashboardPage initialTab="overview" />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/organizer/events"
-                element={
-                  <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
-                    <OrganizerDashboardPage initialTab="events" />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/organizer/orders"
-                element={
-                  <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
-                    <OrganizerDashboardPage initialTab="orders" />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/organizer/events/new"
-                element={
-                  <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
-                    <EventFormPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/organizer/events/:id/edit"
-                element={
-                  <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
-                    <EventFormPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/organizer/attendees"
-                element={
-                  <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
-                    <OrganizerAttendeesPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/organizer/check-ins"
-                element={
-                  <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
-                    <OrganizerAttendeesPage checkInsOnly />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* Admin Console */}
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute allowedRoles={['ADMIN']}>
-                    <AdminDashboardPage />
-                  </ProtectedRoute>
-                }
-              />
-
               <Route path="*" element={<NotFoundPage />} />
             </Route>
+
+            {/* Standalone SaaS Workspaces (Full-height sidebar & top bar, no landing footer) */}
+            <Route
+              path="/scanner"
+              element={
+                <ProtectedRoute allowedRoles={['SCANNER', 'ORGANIZER', 'ADMIN']}>
+                  <ScannerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/scanner"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <ScannerPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/team"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <OrganizerTeamPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <OrganizerDashboardPage initialTab="overview" />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/events"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <OrganizerDashboardPage initialTab="events" />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/orders"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <OrganizerDashboardPage initialTab="orders" />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/events/new"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <EventFormPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/events/:id/edit"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <EventFormPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/attendees"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <OrganizerAttendeesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organizer/check-ins"
+              element={
+                <ProtectedRoute allowedRoles={['ORGANIZER', 'ADMIN']}>
+                  <OrganizerAttendeesPage checkInsOnly />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* System Admin Console */}
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN']}>
+                  <AdminDashboardPage />
+                </ProtectedRoute>
+              }
+            />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

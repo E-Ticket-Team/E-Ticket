@@ -6,7 +6,34 @@ import { useGoogleAuth } from '@/hooks/useGoogleAuth';
 import { useToast } from '@/contexts/ToastContext';
 import { ApiError } from '@/services/api';
 import type { UserProfile } from '@/types/api';
-import { SignIn1 } from '@/components/ui/modern-stunning-sign-in';
+import { SignIn1, type DemoAccountOption } from '@/components/ui/modern-stunning-sign-in';
+
+const DEMO_ROLE_ACCOUNTS: DemoAccountOption[] = [
+  {
+    label: 'Admin (All Roles)',
+    sublabel: 'admin@eticket.com',
+    email: 'admin@eticket.com',
+    password: 'Password123!',
+  },
+  {
+    label: 'Organizer',
+    sublabel: 'organizer@eticket.com',
+    email: 'organizer@eticket.com',
+    password: 'Password123!',
+  },
+  {
+    label: 'Gate Scanner',
+    sublabel: 'scanner@eticket.com',
+    email: 'scanner@eticket.com',
+    password: 'Password123!',
+  },
+  {
+    label: 'Customer',
+    sublabel: 'customer@eticket.com',
+    email: 'customer@eticket.com',
+    password: 'Password123!',
+  },
+];
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -81,6 +108,7 @@ export function LoginPage() {
       googleLoading={googleLoading}
       googleConfigured={!configChecked || googleEnabled}
       externalError={error}
+      demoAccounts={DEMO_ROLE_ACCOUNTS}
       signUpLink={
         <div className="flex flex-col gap-1.5 text-xs text-[#64766D]">
           <span>

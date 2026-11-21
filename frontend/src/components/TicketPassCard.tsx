@@ -17,10 +17,11 @@ import { QRCodeSVG } from 'qrcode.react';
 import { animatePanelEnter } from '../animations/transitions';
 import type { TicketDetail } from '../types/api';
 import {
+  formatBuyerEmail,
+  formatBuyerName,
   formatCurrency,
   formatDateRange,
   formatDateTime,
-  formatPersonName,
 } from '../utils/format';
 import { StatusBadge } from './StatusBadge';
 
@@ -41,7 +42,8 @@ export function TicketPassCard({
   const [modalOpen, setModalOpen] = useState(false);
 
   const event = ticket.ticketType.event;
-  const attendee = ticket.order?.user;
+  const order = ticket.order;
+  const hasBuyer = Boolean(order?.user || order?.guestName || order?.guestEmail);
   const qrValue = ticket.qrPayload || ticket.ticketCode;
 
   function handleDownloadQr() {
@@ -109,11 +111,11 @@ export function TicketPassCard({
                 {event.location ? ` · ${event.location}` : ''}
               </span>
             </div>
-            {attendee && (
+            {hasBuyer && (
               <div className="event-meta-row">
                 <User size={16} color="var(--color-primary)" />
                 <span>
-                  {formatPersonName(attendee)} ({attendee.email})
+                  {formatBuyerName(order)} ({formatBuyerEmail(order)})
                 </span>
               </div>
             )}

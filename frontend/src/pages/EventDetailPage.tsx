@@ -25,6 +25,7 @@ import {
   formatDateTime,
   formatPersonName,
 } from '../utils/format';
+import { saveGuestOrderToken } from '../utils/guestOrders';
 import { AlertBanner } from '../components/AlertBanner';
 import { EventCard } from '../components/EventCard';
 import { StatusBadge } from '../components/StatusBadge';
@@ -47,6 +48,9 @@ export function EventDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -110,14 +114,22 @@ export function EventDetailPage() {
     setOrderError(null);
     if (selectedItems.length === 0) return;
 
-    if (!isAuthenticated) {
-      navigate('/login', { state: { from: location } });
-      return;
-    }
-
     if (user?.role === 'SCANNER') {
       setOrderError('Scanner accounts cannot purchase tickets.');
       return;
+    }
+
+    if (!isAuthenticated) {
+      const cleanName = guestName.trim();
+      const cleanEmail = guestEmail.trim().toLowerCase();
+      if (cleanName.length < 2) {
+        setOrderError('Please enter your full name for ticket delivery.');
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        setOrderError('Please enter a valid email address to receive your QR tickets.');
+        return;
+      }
     }
 
     try {
@@ -127,11 +139,27 @@ export function EventDetailPage() {
           ticketTypeId: i.tier.id,
           quantity: i.quantity,
         })),
+        ...(!isAuthenticated
+          ? {
+              guestName: guestName.trim(),
+              guestEmail: guestEmail.trim().toLowerCase(),
+              guestPhone: guestPhone.trim() || undefined,
+            }
+          : {}),
       });
+
+      if (order.guestToken) {
+        saveGuestOrderToken(order.id, order.guestToken);
+      }
+
       showToast('Seats reserved for 15 minutes. Complete checkout below.', {
         variant: 'success',
       });
-      navigate(`/checkout/${order.id}`);
+      navigate(
+        order.guestToken
+          ? `/checkout/${order.id}?token=${encodeURIComponent(order.guestToken)}`
+          : `/checkout/${order.id}`,
+      );
     } catch (err) {
       setOrderError(
         err instanceof ApiError ? err.message : 'Could not reserve tickets.',
@@ -454,6 +482,78 @@ export function EventDetailPage() {
                 </strong>
               </div>
 
+              {!isAuthenticated && totalSelectedCount > 0 && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    padding: 14,
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--color-ivory)',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: '0.88rem', color: 'var(--color-forest-dark)' }}>
+                      Guest Ticket Details
+                    </strong>
+                    <Link
+                      to="/login"
+                      state={{ from: location }}
+                      style={{ fontSize: '0.76rem', color: 'var(--color-primary)', fontWeight: 600 }}
+                    >
+                      Or sign in
+                    </Link>
+                  </div>
+
+                  <div className="input-group">
+                    <label htmlFor="guest-name" className="input-label">
+                      Full Name *
+                    </label>
+                    <input
+                      id="guest-name"
+                      type="text"
+                      className="input"
+                      placeholder="e.g. Dara Sok"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label htmlFor="guest-email" className="input-label">
+                      Email Address (for QR pass) *
+                    </label>
+                    <input
+                      id="guest-email"
+                      type="email"
+                      className="input"
+                      placeholder="you@gmail.com"
+                      value={guestEmail}
+                      onChange={(e) => setGuestEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label htmlFor="guest-phone" className="input-label">
+                      Phone Number (optional)
+                    </label>
+                    <input
+                      id="guest-phone"
+                      type="tel"
+                      className="input"
+                      placeholder="+855 12 345 678"
+                      value={guestPhone}
+                      onChange={(e) => setGuestPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 className="btn btn-primary btn-lg"
@@ -466,7 +566,7 @@ export function EventDetailPage() {
                   {creatingOrder
                     ? 'Reserving Seats...'
                     : !isAuthenticated
-                      ? 'Sign In to Reserve Tickets'
+                      ? 'Buy Tickets Without Login'
                       : 'Continue to Checkout'}
                 </span>
               </button>

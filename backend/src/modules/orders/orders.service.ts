@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -14,7 +15,9 @@ import {
   Role,
   TicketStatus,
 } from '@prisma/client';
+import * as crypto from 'crypto';
 import { fromMinorUnits, toMinorUnits } from '../../common/utils/money.util';
+import { hashCredential } from '../../common/utils/qr-credential.util';
 import { AuthenticatedActor } from '../events/events.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TicketsService } from '../tickets/tickets.service';
@@ -40,8 +43,29 @@ export class OrdersService {
       this.configService.get<number>('orders.reservationMinutes') || 15;
   }
 
-  async createOrder(userId: string, dto: CreateOrderDto) {
+  async createOrder(userId: string | null, dto: CreateOrderDto) {
     await this.expireStaleOrders();
+
+    let guestToken: string | undefined;
+    let guestTokenHash: string | null = null;
+    let guestName: string | null = null;
+    let guestEmail: string | null = null;
+    let guestPhone: string | null = null;
+
+    if (!userId) {
+      guestName = dto.guestName?.trim() || null;
+      guestEmail = dto.guestEmail?.trim().toLowerCase() || null;
+      guestPhone = dto.guestPhone?.trim() || null;
+
+      if (!guestName || guestName.length < 2 || !guestEmail) {
+        throw new BadRequestException(
+          'Full name and valid email address are required for guest ticket checkout',
+        );
+      }
+
+      guestToken = crypto.randomBytes(32).toString('hex');
+      guestTokenHash = hashCredential(guestToken);
+    }
 
     // Coalesce duplicate ticketTypeIds deterministically to avoid deadlocks
     const qtyByTier = new Map<string, number>();
@@ -133,7 +157,11 @@ export class OrdersService {
 
             return tx.order.create({
               data: {
-                userId,
+                userId: userId ?? null,
+                guestName,
+                guestEmail,
+                guestPhone,
+                guestTokenHash,
                 totalAmount: fromMinorUnits(totalCents),
                 currency: 'USD',
                 status: OrderStatus.PENDING,
@@ -150,7 +178,10 @@ export class OrdersService {
           },
         );
 
-        return this.formatOrder(order);
+        return {
+          ...this.formatOrder(order),
+          ...(guestToken ? { guestToken } : {}),
+        };
       } catch (err: any) {
         if (err?.code === 'P2034' && attempt < maxAttempts) {
           continue;
@@ -172,7 +203,11 @@ export class OrdersService {
     return orders.map((order) => this.formatOrder(order));
   }
 
-  async getOrderById(orderId: string, currentUser: AuthenticatedActor) {
+  async getOrderById(
+    orderId: string,
+    currentUser?: AuthenticatedActor | null,
+    guestToken?: string | null,
+  ) {
     await this.expireOrderIfStale(orderId);
 
     const order = await this.prisma.order.findUnique({
@@ -184,12 +219,7 @@ export class OrdersService {
       throw new NotFoundException(`Order with ID "${orderId}" not found`);
     }
 
-    if (
-      order.userId !== currentUser.id &&
-      currentUser.role !== Role.ADMIN
-    ) {
-      throw new ForbiddenException('You do not have access to this order');
-    }
+    this.assertOrderAccess(order, currentUser, guestToken);
 
     return this.formatOrder(order);
   }
@@ -197,7 +227,8 @@ export class OrdersService {
   async cancelOrder(
     orderId: string,
     dto: CancelOrderDto,
-    currentUser: AuthenticatedActor,
+    currentUser?: AuthenticatedActor | null,
+    guestToken?: string | null,
   ) {
     await this.expireOrderIfStale(orderId);
 
@@ -214,15 +245,11 @@ export class OrdersService {
         throw new NotFoundException(`Order with ID "${orderId}" not found`);
       }
 
-      if (
-        order.userId !== currentUser.id &&
-        currentUser.role !== Role.ADMIN
-      ) {
-        throw new ForbiddenException('You do not have permission to cancel this order');
-      }
+      this.assertOrderAccess(order, currentUser, guestToken);
 
       const now = new Date();
-      const reason = dto.reason?.trim() || 'Cancelled by user';
+      const reason =
+        dto.reason?.trim() || (currentUser ? 'Cancelled by user' : 'Cancelled by guest');
 
       if (order.status === OrderStatus.PENDING) {
         const claimed = await tx.order.updateMany({
@@ -306,6 +333,40 @@ export class OrdersService {
     });
 
     return this.formatOrder(updatedOrder);
+  }
+
+  public assertOrderAccess(
+    order: { userId: string | null; guestTokenHash?: string | null },
+    currentUser?: AuthenticatedActor | null,
+    rawGuestToken?: string | null,
+  ) {
+    if (currentUser?.role === Role.ADMIN) {
+      return;
+    }
+
+    if (currentUser && order.userId && order.userId === currentUser.id) {
+      return;
+    }
+
+    if (rawGuestToken && order.guestTokenHash) {
+      const providedHash = hashCredential(rawGuestToken.trim());
+      const providedBuf = Buffer.from(providedHash, 'hex');
+      const expectedBuf = Buffer.from(order.guestTokenHash, 'hex');
+      if (
+        providedBuf.length === expectedBuf.length &&
+        crypto.timingSafeEqual(providedBuf, expectedBuf)
+      ) {
+        return;
+      }
+    }
+
+    if (!currentUser) {
+      throw new UnauthorizedException(
+        'Please provide a valid guest order token or sign in to access this order',
+      );
+    }
+
+    throw new ForbiddenException('You do not have access to this order');
   }
 
   /**
@@ -420,10 +481,11 @@ export class OrdersService {
   }
 
   public formatOrder(order: any) {
+    const { guestTokenHash: _hiddenGuestTokenHash, ...safeOrder } = order;
     return {
-      ...order,
-      tickets: Array.isArray(order.tickets)
-        ? order.tickets.map((t: any) => {
+      ...safeOrder,
+      tickets: Array.isArray(safeOrder.tickets)
+        ? safeOrder.tickets.map((t: any) => {
             const { qrTokenHash: _hidden, ...rest } = t;
             return {
               ...rest,

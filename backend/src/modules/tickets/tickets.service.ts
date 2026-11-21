@@ -270,7 +270,9 @@ export class TicketsService {
       );
     }
 
-    const isOwner = ticket.order.userId === currentUser.id;
+    const isOwner = Boolean(
+      ticket.order.userId && ticket.order.userId === currentUser.id,
+    );
     const isAdmin = currentUser.role === Role.ADMIN;
     const isOwningOrganizer =
       currentUser.role === Role.ORGANIZER &&
@@ -434,11 +436,22 @@ export class TicketsService {
   }
 
   private sanitizeTicket<
-    T extends { id: string; ticketCode: string; qrTokenHash?: string | null },
+    T extends {
+      id: string;
+      ticketCode: string;
+      qrTokenHash?: string | null;
+      order?: Record<string, any> | null;
+    },
   >(ticket: T) {
-    const { qrTokenHash: _hidden, ...rest } = ticket;
+    const { qrTokenHash: _hidden, order, ...rest } = ticket;
+    let safeOrder = order;
+    if (order && typeof order === 'object' && 'guestTokenHash' in order) {
+      const { guestTokenHash: _hiddenGuestToken, ...restOrder } = order;
+      safeOrder = restOrder;
+    }
     return {
       ...rest,
+      ...(safeOrder !== undefined ? { order: safeOrder } : {}),
       qrPayload: this.buildQrPayload(ticket),
     };
   }

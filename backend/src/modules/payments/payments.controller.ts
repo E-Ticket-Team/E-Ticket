@@ -7,13 +7,14 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedActor } from '../events/events.service';
 import {
   PaymentWebhookDto,
@@ -27,35 +28,48 @@ export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('orders/:id/payment')
+  @Public()
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @Throttle({ default: { limit: 20, ttl: 60000 } })
-  @ApiBearerAuth('JWT-auth')
   @ApiOperation({
-    summary: 'Confirm and process payment for a pending order (idempotent)',
+    summary: 'Confirm and process payment for a pending order (user or guest token)',
     description:
-      'Verifies order ownership, processes via MockPaymentProvider (development) or configured provider, atomically transitions order to PAID, and issues QR tickets once.',
+      'Verifies order ownership or guest order token, processes via MockPaymentProvider (development) or configured provider, atomically transitions order to PAID, and issues QR tickets once.',
   })
   @ApiResponse({ status: HttpStatus.OK, description: 'Payment processed' })
   processOrderPayment(
     @Param('id') orderId: string,
     @Body() dto: ProcessPaymentDto,
-    @CurrentUser() user: AuthenticatedActor,
+    @CurrentUser() user: AuthenticatedActor | null,
+    @Headers('x-guest-token') guestTokenHeader?: string,
+    @Query('token') guestTokenQuery?: string,
   ) {
-    return this.paymentsService.processOrderPayment(orderId, dto, user);
+    return this.paymentsService.processOrderPayment(
+      orderId,
+      dto,
+      user,
+      guestTokenHeader || guestTokenQuery || null,
+    );
   }
 
   @Get('orders/:id/payment')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth('JWT-auth')
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({
-    summary: 'Retrieve payment status and attempts for an order',
+    summary: 'Retrieve payment status and attempts for an order (user or guest token)',
   })
   getOrderPayment(
     @Param('id') orderId: string,
-    @CurrentUser() user: AuthenticatedActor,
+    @CurrentUser() user: AuthenticatedActor | null,
+    @Headers('x-guest-token') guestTokenHeader?: string,
+    @Query('token') guestTokenQuery?: string,
   ) {
-    return this.paymentsService.getOrderPayments(orderId, user);
+    return this.paymentsService.getOrderPayments(
+      orderId,
+      user,
+      guestTokenHeader || guestTokenQuery || null,
+    );
   }
 
   @Post('payments/webhook')

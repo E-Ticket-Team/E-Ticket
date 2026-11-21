@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
 import {
   EventStatus,
   OrderStatus,
@@ -15,7 +16,10 @@ import {
 import { fromMinorUnits, toMinorUnits } from '../../common/utils/money.util';
 import { AuthenticatedActor } from '../events/events.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AssignScannerDto } from './dto/assign-scanner.dto';
+import {
+  AssignScannerDto,
+  AssignTeamMemberDto,
+} from './dto/assign-scanner.dto';
 
 const SAFE_ATTENDEE_SELECT = {
   id: true,
@@ -313,13 +317,19 @@ export class OrganizerService {
         { ticketCode: { contains: q, mode: 'insensitive' } },
         {
           order: {
-            user: {
-              OR: [
-                { email: { contains: q, mode: 'insensitive' } },
-                { firstName: { contains: q, mode: 'insensitive' } },
-                { lastName: { contains: q, mode: 'insensitive' } },
-              ],
-            },
+            OR: [
+              { guestEmail: { contains: q, mode: 'insensitive' } },
+              { guestName: { contains: q, mode: 'insensitive' } },
+              {
+                user: {
+                  OR: [
+                    { email: { contains: q, mode: 'insensitive' } },
+                    { firstName: { contains: q, mode: 'insensitive' } },
+                    { lastName: { contains: q, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            ],
           },
         },
       ];
@@ -336,6 +346,9 @@ export class OrganizerService {
             id: true,
             status: true,
             paymentReference: true,
+            guestName: true,
+            guestEmail: true,
+            guestPhone: true,
             createdAt: true,
             paidAt: true,
             user: { select: SAFE_ATTENDEE_SELECT },
@@ -362,6 +375,9 @@ export class OrganizerService {
         order: {
           select: {
             id: true,
+            guestName: true,
+            guestEmail: true,
+            guestPhone: true,
             user: { select: SAFE_ATTENDEE_SELECT },
           },
         },
@@ -413,7 +429,7 @@ export class OrganizerService {
       take: 100,
     });
 
-    return orders;
+    return orders.map(({ guestTokenHash: _hiddenGuestToken, ...rest }) => rest);
   }
 
   async getEventScanners(eventId: string, currentUser: AuthenticatedActor) {
@@ -493,6 +509,214 @@ export class OrganizerService {
     await this.prisma.eventScanner.delete({
       where: { id: existing.id },
     });
+  }
+
+  async getTeamMembers(currentUser: AuthenticatedActor) {
+    const eventFilter: Prisma.EventWhereInput =
+      currentUser.role === Role.ADMIN ? {} : { organizerId: currentUser.id };
+
+    const assignments = await this.prisma.eventScanner.findMany({
+      where: { event: eventFilter },
+      include: {
+        user: {
+          select: {
+            ...SAFE_ATTENDEE_SELECT,
+            role: true,
+            isActive: true,
+          },
+        },
+        event: {
+          select: {
+            id: true,
+            title: true,
+            venue: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: { assignedAt: 'desc' },
+    });
+
+    const grouped = new Map<
+      string,
+      {
+        user: {
+          id: string;
+          email: string;
+          firstName: string | null;
+          lastName: string | null;
+          phoneNumber: string | null;
+          role: Role;
+          isActive: boolean;
+        };
+        events: Array<{
+          id: string;
+          title: string;
+          venue: string;
+          status: EventStatus;
+          assignedAt: Date;
+        }>;
+      }
+    >();
+
+    for (const row of assignments) {
+      const existing = grouped.get(row.userId);
+      const evEntry = {
+        id: row.event.id,
+        title: row.event.title,
+        venue: row.event.venue,
+        status: row.event.status,
+        assignedAt: row.assignedAt,
+      };
+      if (existing) {
+        existing.events.push(evEntry);
+      } else {
+        grouped.set(row.userId, {
+          user: row.user,
+          events: [evEntry],
+        });
+      }
+    }
+
+    return Array.from(grouped.values());
+  }
+
+  async assignTeamMember(
+    dto: AssignTeamMemberDto,
+    currentUser: AuthenticatedActor,
+  ) {
+    const ownedEvents = await this.prisma.event.findMany({
+      where:
+        currentUser.role === Role.ADMIN ? {} : { organizerId: currentUser.id },
+      select: { id: true, title: true, venue: true, status: true },
+      orderBy: { startDate: 'asc' },
+    });
+
+    if (ownedEvents.length === 0) {
+      throw new BadRequestException(
+        'Create at least one event first before adding gate staff.',
+      );
+    }
+
+    const ownedMap = new Map(ownedEvents.map((ev) => [ev.id, ev]));
+    const targetIds =
+      dto.eventIds && dto.eventIds.length > 0
+        ? Array.from(new Set(dto.eventIds))
+        : ownedEvents.map((ev) => ev.id);
+
+    for (const evId of targetIds) {
+      if (!ownedMap.has(evId)) {
+        throw new ForbiddenException(
+          'You can only assign staff to events created by your organization.',
+        );
+      }
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    let staffUser = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        ...SAFE_ATTENDEE_SELECT,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!staffUser) {
+      if (!dto.password || dto.password.length < 8) {
+        throw new BadRequestException(
+          `No user found for "${email}". Provide an initial password (min 8 characters) to create their Gate Scanner account.`,
+        );
+      }
+      const passwordHash = await bcrypt.hash(dto.password, 10);
+      staffUser = await this.prisma.user.create({
+        data: {
+          email,
+          password: passwordHash,
+          firstName: dto.firstName?.trim() || null,
+          lastName: dto.lastName?.trim() || null,
+          role: Role.SCANNER,
+          isActive: true,
+        },
+        select: {
+          ...SAFE_ATTENDEE_SELECT,
+          role: true,
+          isActive: true,
+        },
+      });
+    } else {
+      if (!staffUser.isActive) {
+        throw new BadRequestException('This user account is currently suspended.');
+      }
+      if (staffUser.role !== Role.SCANNER) {
+        throw new BadRequestException(
+          `User "${email}" has role ${staffUser.role}. Create a dedicated staff email or ask System Admin to set their role to SCANNER.`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction(
+      targetIds.map((eventId) =>
+        this.prisma.eventScanner.upsert({
+          where: {
+            eventId_userId: { eventId, userId: staffUser!.id },
+          },
+          update: {},
+          create: {
+            eventId,
+            userId: staffUser!.id,
+          },
+        }),
+      ),
+    );
+
+    const assignedRows = await this.prisma.eventScanner.findMany({
+      where: {
+        userId: staffUser.id,
+        eventId: { in: targetIds },
+      },
+      include: {
+        event: {
+          select: { id: true, title: true, venue: true, status: true },
+        },
+      },
+    });
+
+    return {
+      user: staffUser,
+      events: assignedRows.map((r) => ({
+        id: r.event.id,
+        title: r.event.title,
+        venue: r.event.venue,
+        status: r.event.status,
+        assignedAt: r.assignedAt,
+      })),
+    };
+  }
+
+  async removeTeamMember(
+    scannerUserId: string,
+    currentUser: AuthenticatedActor,
+    eventId?: string,
+  ) {
+    if (eventId) {
+      await this.removeScanner(eventId, scannerUserId, currentUser);
+      return;
+    }
+
+    const eventFilter: Prisma.EventWhereInput =
+      currentUser.role === Role.ADMIN ? {} : { organizerId: currentUser.id };
+
+    const result = await this.prisma.eventScanner.deleteMany({
+      where: {
+        userId: scannerUserId,
+        event: eventFilter,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException('Team assignment not found');
+    }
   }
 
   private async assertEventAccess(

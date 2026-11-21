@@ -116,8 +116,12 @@ model TicketType {
 
 model Order {
   id                 String      @id @default(uuid())
-  userId             String
-  user               User        @relation(fields: [userId], references: [id])
+  userId             String?
+  user               User?       @relation(fields: [userId], references: [id])
+  guestName          String?
+  guestEmail         String?
+  guestPhone         String?
+  guestTokenHash     String?
   totalAmount        Decimal     @db.Decimal(10, 2)
   currency           String      @default("USD")
   status             OrderStatus @default(PENDING)

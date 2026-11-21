@@ -1,14 +1,17 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsEmail,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
   Min,
+  MinLength,
 } from 'class-validator';
 
 export class AdminQueryUsersDto {
@@ -50,6 +53,50 @@ export class AdminUpdateUserDto {
         ? false
         : value,
   )
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+}
+
+export class AdminCreateUserDto {
+  @ApiProperty({ example: 'staff@eticket.com' })
+  @IsEmail()
+  @IsNotEmpty()
+  @Transform(({ value }: { value: string }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
+  email: string;
+
+  @ApiProperty({ minLength: 8, example: 'Password123!' })
+  @IsString()
+  @MinLength(8)
+  password: string;
+
+  @ApiPropertyOptional({ example: 'Sophea' })
+  @IsString()
+  @IsOptional()
+  firstName?: string;
+
+  @ApiPropertyOptional({ example: 'Lim' })
+  @IsString()
+  @IsOptional()
+  lastName?: string;
+
+  @ApiPropertyOptional({ example: 'Cambodia Events Co.' })
+  @IsString()
+  @IsOptional()
+  organizationName?: string;
+
+  @ApiPropertyOptional({ example: '+855 12 888 999' })
+  @IsString()
+  @IsOptional()
+  phoneNumber?: string;
+
+  @ApiProperty({ enum: Role, example: Role.ORGANIZER })
+  @IsEnum(Role)
+  role: Role;
+
+  @ApiPropertyOptional({ default: true })
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;

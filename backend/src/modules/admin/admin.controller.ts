@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -13,7 +14,11 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { AdminQueryUsersDto, AdminUpdateUserDto } from './dto/admin-user.dto';
+import {
+  AdminCreateUserDto,
+  AdminQueryUsersDto,
+  AdminUpdateUserDto,
+} from './dto/admin-user.dto';
 import { AdminService } from './admin.service';
 
 @ApiTags('Admin')
@@ -36,6 +41,12 @@ export class AdminController {
     return this.adminService.listUsers(query);
   }
 
+  @Post('users')
+  @ApiOperation({ summary: 'Create a platform user and assign role (Admin only)' })
+  createUser(@Body() dto: AdminCreateUserDto) {
+    return this.adminService.createUser(dto);
+  }
+
   @Patch('users/:id')
   @ApiOperation({ summary: 'Update user role or active status (Admin only)' })
   updateUser(
@@ -51,15 +62,18 @@ export class AdminController {
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'status', required: false, enum: OrderStatus })
+  @ApiQuery({ name: 'search', required: false })
   listOrders(
     @Query('page') page?: number,
     @Query('limit') limit?: number,
     @Query('status') status?: OrderStatus,
+    @Query('search') search?: string,
   ) {
     return this.adminService.listOrders({
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 20,
       status,
+      search,
     });
   }
 

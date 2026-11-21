@@ -18,6 +18,7 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
   const organizerEmail = `org-${uniqueSuffix}@eticket.com`;
   const customerEmail = `cust-${uniqueSuffix}@eticket.com`;
   const scannerEmail = `scan-${uniqueSuffix}@eticket.com`;
+  const guestBuyerEmail = `guest-${uniqueSuffix}@gmail.com`;
   const password = 'Password123!';
 
   let organizerToken: string;
@@ -67,16 +68,28 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
     }
     await prisma.ticket.deleteMany({
       where: {
-        order: {
-          user: {
-            email: { in: [customerEmail, organizerEmail, scannerEmail] },
+        OR: [
+          {
+            order: {
+              user: {
+                email: { in: [customerEmail, organizerEmail, scannerEmail] },
+              },
+            },
           },
-        },
+          {
+            order: {
+              guestEmail: guestBuyerEmail,
+            },
+          },
+        ],
       },
     });
     await prisma.order.deleteMany({
       where: {
-        user: { email: { in: [customerEmail, organizerEmail] } },
+        OR: [
+          { user: { email: { in: [customerEmail, organizerEmail] } } },
+          { guestEmail: guestBuyerEmail },
+        ],
       },
     });
     if (createdEventId) {
@@ -507,6 +520,66 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/v1/admin/overview')
       .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+  });
+
+  it('allows guest buyers to reserve, pay, and receive QR passes without logging in while enforcing guest token access', async () => {
+    // Reject guest order missing guestEmail/guestName
+    await request(app.getHttpServer())
+      .post('/api/v1/orders')
+      .send({ items: [{ ticketTypeId: regularTierId, quantity: 1 }] })
+      .expect(400);
+
+    // Reserve ticket as guest (no JWT / cookie)
+    const guestOrderRes = await request(app.getHttpServer())
+      .post('/api/v1/orders')
+      .send({
+        items: [{ ticketTypeId: regularTierId, quantity: 1 }],
+        guestName: 'Guest Visitor',
+        guestEmail: guestBuyerEmail,
+      })
+      .expect(201);
+
+    const guestOrderId = guestOrderRes.body.data.id;
+    const guestToken = guestOrderRes.body.data.guestToken;
+    expect(guestToken).toBeTruthy();
+    expect(guestOrderRes.body.data.guestTokenHash).toBeUndefined();
+
+    // Reject unauthenticated order lookup without token
+    await request(app.getHttpServer())
+      .get(`/api/v1/orders/${guestOrderId}`)
+      .expect(401);
+
+    // Complete payment as guest with x-guest-token
+    const payRes = await request(app.getHttpServer())
+      .post(`/api/v1/orders/${guestOrderId}/payment`)
+      .set('x-guest-token', guestToken)
+      .send({
+        provider: 'MOCK',
+        idempotencyKey: `guest-pay-${uniqueSuffix}`,
+        simulateOutcome: 'SUCCEEDED',
+      })
+      .expect(200);
+
+    expect(payRes.body.data.order.status).toBe('PAID');
+    expect(payRes.body.data.order.tickets).toHaveLength(1);
+    expect(payRes.body.data.order.tickets[0].qrPayload).toMatch(/^ETK1\./);
+
+    // Seeded deterministic tier UUIDs also pass DTO validation (reserve & cancel cleanly)
+    const seededTierId = 'c0000000-0000-0000-0000-000000000001';
+    const seededOrderRes = await request(app.getHttpServer())
+      .post('/api/v1/orders')
+      .send({
+        items: [{ ticketTypeId: seededTierId, quantity: 1 }],
+        guestName: 'Seeded Buyer',
+        guestEmail: guestBuyerEmail,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/orders/${seededOrderRes.body.data.id}/cancel`)
+      .set('x-guest-token', seededOrderRes.body.data.guestToken)
+      .send({ reason: 'E2E cleanup' })
       .expect(200);
   });
 });

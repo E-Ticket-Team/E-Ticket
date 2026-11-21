@@ -1,22 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   Clock,
   CreditCard,
+  Printer,
   QrCode,
   ShieldCheck,
   XCircle,
 } from 'lucide-react';
 import { animatePanelEnter } from '../../animations/transitions';
+import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../contexts/ToastContext';
 import { ApiError } from '../../services/api';
 import { ordersService } from '../../services/orders.service';
 import { paymentsService } from '../../services/payments.service';
 import type { OrderSummary } from '../../types/api';
-import { formatCurrency, formatDateTime } from '../../utils/format';
+import { formatBuyerEmail, formatBuyerName, formatCurrency, formatDateTime } from '../../utils/format';
+import { getGuestOrderToken, saveGuestOrderToken } from '../../utils/guestOrders';
 import { AlertBanner } from '../../components/AlertBanner';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -34,8 +37,19 @@ function formatCountdown(msRemaining: number): string {
 
 export function CheckoutPage() {
   const { orderId } = useParams<{ orderId: string }>();
+  const [searchParams] = useSearchParams();
+  const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const confirmationRef = useRef<HTMLDivElement | null>(null);
+
+  const queryToken = searchParams.get('token');
+  const guestToken = queryToken || getGuestOrderToken(orderId);
+
+  useEffect(() => {
+    if (orderId && queryToken) {
+      saveGuestOrderToken(orderId, queryToken);
+    }
+  }, [orderId, queryToken]);
 
   const [order, setOrder] = useState<OrderSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +68,7 @@ export function CheckoutPage() {
     if (!orderId) return;
     try {
       setLoading(true);
-      const data = await ordersService.getById(orderId);
+      const data = await ordersService.getById(orderId, guestToken);
       setOrder(data);
       setError(null);
     } catch (err) {
@@ -62,7 +76,7 @@ export function CheckoutPage() {
     } finally {
       setLoading(false);
     }
-  }, [orderId]);
+  }, [orderId, guestToken]);
 
   useEffect(() => {
     loadOrder();
@@ -82,11 +96,15 @@ export function CheckoutPage() {
     setProcessing(true);
 
     try {
-      const result = await paymentsService.processOrderPayment(order.id, {
-        provider: 'MOCK',
-        idempotencyKey,
-        simulateOutcome,
-      });
+      const result = await paymentsService.processOrderPayment(
+        order.id,
+        {
+          provider: 'MOCK',
+          idempotencyKey,
+          simulateOutcome,
+        },
+        guestToken,
+      );
       setOrder(result.order);
 
       if (result.payment.status === 'SUCCEEDED') {
@@ -112,7 +130,11 @@ export function CheckoutPage() {
     if (!order) return;
     try {
       setCancelling(true);
-      const updated = await ordersService.cancel(order.id, 'Cancelled at checkout');
+      const updated = await ordersService.cancel(
+        order.id,
+        'Cancelled at checkout',
+        guestToken,
+      );
       setOrder(updated);
       setConfirmCancel(false);
       showToast('Order cancelled and seats released back to inventory.', {
@@ -159,15 +181,21 @@ export function CheckoutPage() {
     <div>
       <PageHeader
         title="Secure Checkout"
-        subtitle={`Order Reference: ${order.id}`}
+        subtitle={`Order Reference: ${order.id} · Attendee: ${formatBuyerName(order)} (${formatBuyerEmail(order)})`}
         actions={
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <StatusBadge
               status={reservationExpired && order.status === 'PENDING' ? 'EXPIRED' : order.status}
             />
-            <Link to="/my-account" className="btn btn-secondary btn-sm">
-              My Orders
-            </Link>
+            {isAuthenticated ? (
+              <Link to="/my-account" className="btn btn-secondary btn-sm">
+                My Orders
+              </Link>
+            ) : (
+              <Link to="/events" className="btn btn-secondary btn-sm">
+                All Events
+              </Link>
+            )}
           </div>
         }
       />
@@ -329,10 +357,21 @@ export function CheckoutPage() {
             </>
           ) : isPaid ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <Link to="/my-tickets" className="btn btn-primary btn-lg">
-                <QrCode size={17} />
-                <span>Open My Ticket Wallet</span>
-              </Link>
+              {isAuthenticated ? (
+                <Link to="/my-tickets" className="btn btn-primary btn-lg">
+                  <QrCode size={17} />
+                  <span>Open My Ticket Wallet</span>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-lg"
+                  onClick={() => window.print()}
+                >
+                  <Printer size={17} />
+                  <span>Print / Save QR Passes</span>
+                </button>
+              )}
               <Link to="/events" className="btn btn-secondary">
                 Browse More Events
               </Link>

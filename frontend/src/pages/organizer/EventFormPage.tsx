@@ -21,7 +21,7 @@ import type {
 } from '../../types/api';
 import { formatCurrency, toDatetimeLocalValue } from '../../utils/format';
 import { AlertBanner } from '../../components/AlertBanner';
-import { OrganizerSidebar } from '../../components/dashboard/OrganizerSidebar';
+import { OrganizerWorkspaceLayout } from '../../components/dashboard/OrganizerWorkspaceLayout';
 
 export function EventFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -261,30 +261,27 @@ export function EventFormPage() {
   }
 
   return (
-    <div className="dashboard-shell">
-      <OrganizerSidebar />
-
-      <div>
-        <div className="section-header">
-          <div>
-            <Link to="/organizer/events" className="btn btn-secondary btn-sm" style={{ marginBottom: 12 }}>
-              <ArrowLeft size={15} />
-              <span>Back to My Events</span>
-            </Link>
-            <h1 className="page-title">{isEdit ? 'Edit Event, Tiers & Gate Scanners' : 'Create New Event'}</h1>
-            <p className="page-subtitle">
-              {isEdit
-                ? 'Update event metadata, pricing tiers, or authorized gate scanners.'
-                : 'Your organizer identity is linked automatically from your authenticated account.'}
-            </p>
-          </div>
-
+    <OrganizerWorkspaceLayout
+      pageTitle={isEdit ? 'Edit Event & Tiers' : 'Create New Event'}
+      headerActions={
+        <div className="flex items-center gap-2">
+          <Link to="/organizer/events" className="btn btn-secondary btn-sm">
+            <ArrowLeft size={15} />
+            <span>Back to My Events</span>
+          </Link>
           {isEdit && id && (
-            <Link to={`/events/${id}`} className="btn btn-secondary">
-              View Public Event Page
+            <Link to={`/events/${id}`} className="btn btn-secondary btn-sm">
+              View Public Page
             </Link>
           )}
         </div>
+      }
+    >
+      <p className="text-sm text-[#53665E] mb-5">
+        {isEdit
+          ? 'Update event metadata, pricing tiers, or authorized gate scanners.'
+          : 'Your organizer identity is linked automatically from your authenticated account.'}
+      </p>
 
         {error && <AlertBanner variant="error" title="Could not save event" message={error} />}
 
@@ -661,7 +658,6 @@ export function EventFormPage() {
             )}
           </div>
         )}
-      </div>
-    </div>
+    </OrganizerWorkspaceLayout>
   );
 }

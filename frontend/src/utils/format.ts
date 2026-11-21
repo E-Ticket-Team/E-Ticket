@@ -77,6 +77,38 @@ export function formatPersonName(
   return full || user.email;
 }
 
+export function formatBuyerName(
+  order?: {
+    user?: UserSummary | null;
+    guestName?: string | null;
+    guestEmail?: string | null;
+  } | null,
+): string {
+  if (!order) return 'Guest Attendee';
+  if (order.user) return formatPersonName(order.user);
+  return order.guestName || order.guestEmail || 'Guest Attendee';
+}
+
+export function formatBuyerEmail(
+  order?: {
+    user?: UserSummary | null;
+    guestEmail?: string | null;
+  } | null,
+): string {
+  if (!order) return '—';
+  return order.user?.email || order.guestEmail || '—';
+}
+
+export function formatBuyerPhone(
+  order?: {
+    user?: UserSummary | null;
+    guestPhone?: string | null;
+  } | null,
+): string {
+  if (!order) return '—';
+  return order.user?.phoneNumber || order.guestPhone || '—';
+}
+
 export function getLowestPrice(ticketTypes?: TicketType[]): number | null {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const prices = ticketTypes

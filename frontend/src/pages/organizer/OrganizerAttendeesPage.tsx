@@ -4,13 +4,12 @@ import { ApiError } from '../../services/api';
 import { eventsService } from '../../services/events.service';
 import { organizerService } from '../../services/organizer.service';
 import type { EventItem, TicketDetail, TicketStatus } from '../../types/api';
-import { formatDateTime, formatPersonName } from '../../utils/format';
+import { formatBuyerEmail, formatBuyerName, formatDateTime } from '../../utils/format';
 import { AlertBanner } from '../../components/AlertBanner';
 import { EmptyState } from '../../components/EmptyState';
 import { StatusBadge } from '../../components/StatusBadge';
-import { PageHeader } from '../../components/common/PageHeader';
 import { Skeleton } from '../../components/common/Skeleton';
-import { OrganizerSidebar } from '../../components/dashboard/OrganizerSidebar';
+import { OrganizerWorkspaceLayout } from '../../components/dashboard/OrganizerWorkspaceLayout';
 
 export function OrganizerAttendeesPage({
   checkInsOnly = false,
@@ -78,18 +77,14 @@ export function OrganizerAttendeesPage({
   const tiers = currentEvent?.ticketTypes ?? [];
 
   return (
-    <div className="dashboard-shell">
-      <OrganizerSidebar />
-
-      <div>
-        <PageHeader
-          title={checkInsOnly ? 'Gate Check-In Log' : 'Attendee Management'}
-          subtitle={
-            checkInsOnly
-              ? 'Verified ticket entries with check-in timestamps and gate staff audit.'
-              : 'Inspect issued tickets, search attendees, and track check-in status per event.'
-          }
-        />
+    <OrganizerWorkspaceLayout
+      pageTitle={checkInsOnly ? 'Gate Check-In Log' : 'Attendee Management'}
+    >
+      <p className="text-sm text-[#53665E] mb-5">
+        {checkInsOnly
+          ? 'Verified ticket entries with check-in timestamps and gate staff audit.'
+          : 'Inspect issued tickets, search attendees, and track check-in status per event.'}
+      </p>
 
         {error && <AlertBanner variant="error" message={error} />}
 
@@ -201,10 +196,10 @@ export function OrganizerAttendeesPage({
                     </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>
-                        {formatPersonName(t.order?.user)}
+                        {formatBuyerName(t.order)}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                        {t.order?.user?.email}
+                        {formatBuyerEmail(t.order)}
                       </div>
                     </td>
                     <td>{t.ticketType.name}</td>
@@ -234,7 +229,6 @@ export function OrganizerAttendeesPage({
             </table>
           </div>
         )}
-      </div>
-    </div>
+    </OrganizerWorkspaceLayout>
   );
 }

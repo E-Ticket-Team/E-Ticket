@@ -22,7 +22,10 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthenticatedActor } from '../events/events.service';
-import { AssignScannerDto } from './dto/assign-scanner.dto';
+import {
+  AssignScannerDto,
+  AssignTeamMemberDto,
+} from './dto/assign-scanner.dto';
 import { OrganizerService } from './organizer.service';
 
 @ApiTags('Organizer')
@@ -126,5 +129,37 @@ export class OrganizerController {
     @CurrentUser() user: AuthenticatedActor,
   ) {
     return this.organizerService.removeScanner(eventId, userId, user);
+  }
+
+  @Get('team')
+  @ApiOperation({
+    summary: 'List all authorized gate staff across organization events',
+  })
+  getTeam(@CurrentUser() user: AuthenticatedActor) {
+    return this.organizerService.getTeamMembers(user);
+  }
+
+  @Post('team')
+  @ApiOperation({
+    summary: 'Add or assign a gate scanner staff user to created events',
+  })
+  assignTeamMember(
+    @Body() dto: AssignTeamMemberDto,
+    @CurrentUser() user: AuthenticatedActor,
+  ) {
+    return this.organizerService.assignTeamMember(dto, user);
+  }
+
+  @Delete('team/:userId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Revoke staff event access across organization or specific event',
+  })
+  removeTeamMember(
+    @Param('userId') userId: string,
+    @CurrentUser() user: AuthenticatedActor,
+    @Query('eventId') eventId?: string,
+  ) {
+    return this.organizerService.removeTeamMember(userId, user, eventId);
   }
 }

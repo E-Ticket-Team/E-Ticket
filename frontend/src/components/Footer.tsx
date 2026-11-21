@@ -24,8 +24,6 @@ interface FooterNavItem {
 export function Footer() {
   const { user, isAuthenticated } = useAuth();
   const canOrganize = user?.role === 'ORGANIZER' || user?.role === 'ADMIN';
-  const canScan =
-    user?.role === 'SCANNER' || user?.role === 'ORGANIZER' || user?.role === 'ADMIN';
 
   const discoverLinks: FooterNavItem[] = [
     { label: 'Home', to: '/' },
@@ -39,6 +37,7 @@ export function Footer() {
   ];
 
   const platformLinks: FooterNavItem[] = [
+    { label: 'For Business & Events', to: '/organization' },
     ...(canOrganize
       ? [
           { label: 'Organizer Studio', to: '/organizer' },
@@ -50,7 +49,6 @@ export function Footer() {
             ? [{ label: 'Customer Sign Up', to: '/register' }]
             : []),
         ]),
-    ...(canScan ? [{ label: 'Gate Scanner', to: '/scanner' }] : []),
     ...(user?.role === 'ADMIN' ? [{ label: 'Admin Console', to: '/admin' }] : []),
     ...(isAuthenticated ? [{ label: 'Inspect Ticket', to: '/tickets' }] : []),
   ];
@@ -77,8 +75,8 @@ export function Footer() {
     { icon: <CalendarDays size={18} />, label: 'Home Discovery', to: '/' },
     {
       icon: <QrCode size={18} />,
-      label: canScan ? 'Gate Scanner' : 'My Tickets',
-      to: canScan ? '/scanner' : '/my-tickets',
+      label: canOrganize ? 'Gate Scanner Studio' : 'My Tickets',
+      to: canOrganize ? '/organizer/scanner' : '/my-tickets',
     },
     {
       icon: <ShieldCheck size={18} />,

@@ -46,8 +46,6 @@ export function Navbar() {
   }, [drawerOpen]);
 
   const canOrganize = user?.role === 'ORGANIZER' || user?.role === 'ADMIN';
-  const canScan =
-    user?.role === 'SCANNER' || user?.role === 'ORGANIZER' || user?.role === 'ADMIN';
   const isAdmin = user?.role === 'ADMIN';
   const canBuy = isAuthenticated && user?.role !== 'SCANNER';
 
@@ -65,20 +63,19 @@ export function Navbar() {
   const navItems = (
     <>
       <NavLink
-        to="/"
-        end
-        onClick={closeDrawer}
-        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-      >
-        Discover
-      </NavLink>
-
-      <NavLink
         to="/events"
         onClick={closeDrawer}
         className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
       >
         Events
+      </NavLink>
+
+      <NavLink
+        to="/organization"
+        onClick={closeDrawer}
+        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+      >
+        For Business
       </NavLink>
 
       {canBuy && (
@@ -107,16 +104,6 @@ export function Navbar() {
           className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
         >
           Organizer
-        </NavLink>
-      )}
-
-      {canScan && (
-        <NavLink
-          to="/scanner"
-          onClick={closeDrawer}
-          className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-        >
-          Scanner
         </NavLink>
       )}
 

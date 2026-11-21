@@ -15,3 +15,23 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
     }),
   });
 }
+
+if (typeof globalThis.IntersectionObserver !== 'function') {
+  class MockIntersectionObserver implements IntersectionObserver {
+    readonly root: Element | Document | null = null;
+    readonly rootMargin: string = '0px';
+    readonly thresholds: ReadonlyArray<number> = [0];
+
+    disconnect(): void {}
+    observe(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    unobserve(): void {}
+  }
+
+  Object.defineProperty(globalThis, 'IntersectionObserver', {
+    writable: true,
+    value: MockIntersectionObserver,
+  });
+}

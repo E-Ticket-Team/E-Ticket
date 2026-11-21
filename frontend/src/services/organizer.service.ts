@@ -3,6 +3,7 @@ import type {
   EventScannerAssignment,
   OrderSummary,
   OrganizerDashboardData,
+  OrganizerTeamMember,
   TicketDetail,
   TicketStatus,
 } from '../types/api';
@@ -66,6 +67,31 @@ export const organizerService = {
   removeScanner(eventId: string, userId: string): Promise<void> {
     return apiRequest<void>(
       `${API_V1}/organizer/events/${encodeURIComponent(eventId)}/scanners/${encodeURIComponent(userId)}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  getTeamMembers(): Promise<OrganizerTeamMember[]> {
+    return apiRequest<OrganizerTeamMember[]>(`${API_V1}/organizer/team`);
+  },
+
+  assignTeamMember(payload: {
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    password?: string;
+    eventIds?: string[];
+  }): Promise<OrganizerTeamMember> {
+    return apiRequest<OrganizerTeamMember>(`${API_V1}/organizer/team`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  removeTeamMember(userId: string, eventId?: string): Promise<void> {
+    const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
+    return apiRequest<void>(
+      `${API_V1}/organizer/team/${encodeURIComponent(userId)}${qs}`,
       { method: 'DELETE' },
     );
   },

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
+  Building2,
   CalendarDays,
   MapPin,
-  QrCode,
   Search,
   Ticket,
 } from 'lucide-react';
@@ -30,12 +30,11 @@ import { EventCard } from '../components/EventCard';
 import { EventCardSkeletonGrid } from '../components/common/Skeleton';
 
 export function HomePage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const heroRef = useRef<HTMLElement | null>(null);
   const eventsSectionRef = useRef<HTMLElement | null>(null);
-  const editorialSectionRef = useRef<HTMLElement | null>(null);
 
   const [events, setEvents] = useState<EventItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -43,6 +42,7 @@ export function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [heroImgError, setHeroImgError] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -102,13 +102,6 @@ export function HomePage() {
     { dependencies: [loading, events.length], scope: eventsSectionRef },
   );
 
-  useGSAP(
-    () => {
-      runSectionHeadingReveal('.editorial-list-item', editorialSectionRef.current);
-    },
-    { scope: editorialSectionRef },
-  );
-
   const spotlightEvent = events[0] ?? null;
   const spotlightPrice = spotlightEvent
     ? getLowestPrice(spotlightEvent.ticketTypes)
@@ -133,15 +126,16 @@ export function HomePage() {
   }
 
   const canOrganize = user?.role === 'ORGANIZER' || user?.role === 'ADMIN';
+  const showHeroBanner = Boolean(spotlightEvent?.bannerUrl && !heroImgError);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 56 }}>
-      {/* Editorial Ivory Hero */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 52 }}>
+      {/* Clean Banner-Forward Ticket Buying Hero */}
       <section ref={heroRef} className="landing-hero">
         <div className="landing-hero-grid">
           <div>
             <div className="eyebrow-label hero-eyebrow">
-              <span>Live Events &amp; Verified Passes</span>
+              <span>Live Events &amp; Instant Guest Booking</span>
             </div>
 
             <h1 className="hero-title">
@@ -149,7 +143,7 @@ export function HomePage() {
             </h1>
 
             <p className="landing-hero-desc hero-description">
-              Find concerts, conferences, and cultural gatherings across the city. Reserve your seats directly and walk through the gate with one verified pass.
+              Browse concerts, conferences, sports, and cultural nights. Pick your seats and check out directly in seconds—no mandatory account signup required.
             </p>
 
             <form onSubmit={handleSearch} className="landing-search-bar hero-search">
@@ -170,45 +164,44 @@ export function HomePage() {
             </form>
 
             <div className="landing-hero-actions hero-actions">
-              <Link to="/events" className="btn btn-primary btn-lg">
-                <CalendarDays size={17} />
-                <span>Explore Events</span>
+              <Link
+                to={spotlightEvent ? `/events/${spotlightEvent.id}` : '/events'}
+                className="btn btn-primary btn-lg"
+              >
+                <Ticket size={17} />
+                <span>{spotlightEvent ? 'Buy Tickets Now' : 'Explore Events'}</span>
               </Link>
 
               <Link
-                to={
-                  canOrganize
-                    ? '/organizer/events/new'
-                    : !isAuthenticated
-                      ? '/register/organization'
-                      : '/my-tickets'
-                }
-                className="btn btn-ghost btn-lg"
-                style={{ color: 'var(--color-forest-dark)' }}
+                to="/events"
+                className="btn btn-secondary btn-lg"
               >
-                <span>
-                  {canOrganize
-                    ? 'Create an Event'
-                    : !isAuthenticated
-                      ? 'Create an Event'
-                      : 'Open My Tickets'}
-                </span>
-                <ArrowRight size={16} />
+                <CalendarDays size={16} />
+                <span>Upcoming Events</span>
               </Link>
             </div>
           </div>
 
-          {/* Tactile Physical-Inspired Featured Event Ticket Showcase */}
+          {/* Featured Event Banner Card */}
           <div className="hero-poster-frame hero-showcase">
             <div className="hero-poster-card">
               <div className="hero-poster-media">
-                {spotlightEvent?.bannerUrl && (
+                {showHeroBanner && (
                   <img
-                    src={spotlightEvent.bannerUrl}
-                    alt={spotlightEvent.title}
+                    src={spotlightEvent!.bannerUrl!}
+                    alt={spotlightEvent!.title}
+                    onError={() => setHeroImgError(true)}
                   />
                 )}
-                <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div
+                  style={{
+                    position: 'relative',
+                    zIndex: 1,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
                   <span
                     style={{
                       fontSize: '0.72rem',
@@ -216,15 +209,24 @@ export function HomePage() {
                       letterSpacing: '0.08em',
                       textTransform: 'uppercase',
                       color: 'var(--color-primary-soft)',
+                      backgroundColor: 'rgba(5, 46, 37, 0.72)',
+                      padding: '4px 10px',
+                      borderRadius: 'var(--radius-full)',
                     }}
                   >
                     {spotlightEvent?.category || 'Featured Event'}
                   </span>
-                  <span className="badge badge-success">On Sale</span>
+                  <span className="badge badge-success">On Sale Now</span>
                 </div>
 
                 <div style={{ position: 'relative', zIndex: 1 }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--color-text-inverse-muted)' }}>
+                  <div
+                    style={{
+                      fontSize: '0.78rem',
+                      color: 'var(--color-primary-soft)',
+                      fontWeight: 600,
+                    }}
+                  >
                     {spotlightEvent
                       ? formatDateRange(spotlightEvent.startDate, spotlightEvent.endDate)
                       : 'Upcoming Live Series'}
@@ -243,7 +245,14 @@ export function HomePage() {
               </div>
 
               <div className="hero-poster-body">
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 16,
+                    alignItems: 'flex-start',
+                  }}
+                >
                   <div>
                     <div className="meta-caption">Venue</div>
                     <div
@@ -295,7 +304,7 @@ export function HomePage() {
                     to={`/events/${spotlightEvent.id}`}
                     className="btn btn-primary btn-sm"
                   >
-                    <span>Reserve Pass</span>
+                    <span>Buy Tickets</span>
                     <ArrowRight size={14} />
                   </Link>
                 ) : (
@@ -308,7 +317,7 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* Quiet Editorial Metrics Strip */}
+        {/* Hairline Marketplace Metrics Strip */}
         <div className="metrics-strip">
           <div className="metrics-strip-item">
             <div className="metrics-strip-value tabular-nums">{totalPublished}</div>
@@ -324,14 +333,14 @@ export function HomePage() {
           </div>
           <div className="metrics-strip-item">
             <div className="metrics-strip-value tabular-nums">{totalTicketsLeft}</div>
-            <div className="metrics-strip-label">Seats open for booking</div>
+            <div className="metrics-strip-label">Seats ready to reserve</div>
           </div>
         </div>
       </section>
 
       {error && <AlertBanner variant="error" title="Backend Connection Issue" message={error} />}
 
-      {/* Featured Events & Category Strip */}
+      {/* Upcoming Events Grid */}
       <section ref={eventsSectionRef}>
         <div className="section-header section-reveal">
           <div>
@@ -340,7 +349,7 @@ export function HomePage() {
             </div>
             <h2 className="section-title">Upcoming Events</h2>
             <p className="page-subtitle">
-              Real-time seat availability synced directly with venue inventory.
+              Real-time seat availability synced directly with venue inventory—reserve in seconds.
             </p>
           </div>
           <Link to="/events" className="btn btn-secondary">
@@ -372,15 +381,15 @@ export function HomePage() {
         )}
 
         {loading ? (
-          <EventCardSkeletonGrid count={3} />
+          <EventCardSkeletonGrid count={6} />
         ) : events.length === 0 ? (
           <EmptyState
             icon={<Ticket size={24} />}
             title="No published events yet"
-            description="Sign in as an organizer to publish your first event and configure ticket tiers."
+            description="Host your first event in Organizer Studio to publish tickets live."
             action={
-              <Link to="/register/organization" className="btn btn-primary">
-                Host an Event
+              <Link to="/organization" className="btn btn-primary">
+                Explore Organizer Platform
               </Link>
             }
           />
@@ -393,121 +402,7 @@ export function HomePage() {
         )}
       </section>
 
-      {/* Split Editorial: How Ticketing Works */}
-      <section ref={editorialSectionRef} className="feature-split">
-        <div>
-          <div className="eyebrow-label" style={{ marginBottom: 10 }}>
-            <span>How It Works</span>
-          </div>
-          <h2 className="section-title" style={{ marginBottom: 12 }}>
-            Built for real venues, not spreadsheets.
-          </h2>
-          <p className="page-subtitle" style={{ marginBottom: 24 }}>
-            Every reservation locks inventory cleanly, issues verified passes upon payment settlement, and validates entry once at the door.
-          </p>
-
-          <div className="editorial-list">
-            <div className="editorial-list-item">
-              <div className="editorial-index">01</div>
-              <div>
-                <h3 className="card-title">Atomic Seat Reservation</h3>
-                <p style={{ fontSize: '0.88rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                  Selected tiers are held exclusively for 15 minutes during checkout so popular shows never oversell.
-                </p>
-              </div>
-            </div>
-
-            <div className="editorial-list-item">
-              <div className="editorial-index">02</div>
-              <div>
-                <h3 className="card-title">Instant Boarding-Pass Wallet</h3>
-                <p style={{ fontSize: '0.88rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                  Confirmed orders issue unique QR credentials directly into My Tickets, ready for offline download or print.
-                </p>
-              </div>
-            </div>
-
-            <div className="editorial-list-item">
-              <div className="editorial-index">03</div>
-              <div>
-                <h3 className="card-title">Single-Entry Gate Check-In</h3>
-                <p style={{ fontSize: '0.88rem', color: 'var(--color-text-secondary)', marginTop: 4 }}>
-                  Authorized venue staff scan passes via camera or USB reader with immediate duplicate-scan blocking.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Clean Tactile Digital Pass Preview */}
-        <div
-          className="card"
-          style={{
-            padding: 28,
-            backgroundColor: 'var(--color-ivory)',
-            borderColor: 'var(--color-border-strong)',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--color-white)',
-              border: '1px solid var(--color-border-strong)',
-              borderRadius: 'var(--radius-xl)',
-              overflow: 'hidden',
-              boxShadow: 'var(--shadow-card)',
-            }}
-          >
-            <div style={{ padding: '22px 24px', borderBottom: '2px dashed var(--color-border-strong)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <span className="badge badge-info">VIP ALL-ACCESS</span>
-                <span className="badge badge-success">VALID</span>
-              </div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>
-                {spotlightEvent?.title || 'Cambodia Tech Expo & Music Festival'}
-              </h3>
-              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginTop: 6 }}>
-                {spotlightEvent?.venue || 'Diamond Island Exhibition Center'}
-              </p>
-            </div>
-
-            <div
-              style={{
-                padding: '20px 24px',
-                backgroundColor: 'var(--color-ivory)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 16,
-              }}
-            >
-              <div>
-                <div className="meta-caption">Pass Code</div>
-                <div className="code-chip" style={{ marginTop: 4 }}>
-                  ETK1 · VERIFIED
-                </div>
-              </div>
-              <div
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--color-white)',
-                  border: '1px solid var(--color-border-strong)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--color-forest-dark)',
-                }}
-                aria-hidden="true"
-              >
-                <QrCode size={32} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Forest Green Organizer Invitation */}
+      {/* Clean Invitation Banner to Dedicated Business Landing Page */}
       <section className="promo-forest">
         <div>
           <div
@@ -520,28 +415,44 @@ export function HomePage() {
               marginBottom: 8,
             }}
           >
-            For Organizers &amp; Venues
+            For Businesses &amp; Event Creators
           </div>
           <h2 className="section-title" style={{ color: 'var(--color-white)' }}>
-            Publish Events and Track Gate Entry Live.
+            Hosting Concerts, Summits, or Live Shows?
           </h2>
           <p>
-            Launch event listings, configure ticket tiers, monitor real-time sales, and assign gate scanning staff from one quiet, fast workspace.
+            Explore our dedicated organizer platform to see how atomic reservations, QR pass issuance, and venue gate scanners power sold-out events.
           </p>
         </div>
 
-        <Link
-          to={canOrganize ? '/organizer' : '/register/organization'}
-          className="btn btn-lg"
-          style={{
-            backgroundColor: 'var(--color-white)',
-            color: 'var(--color-forest-dark)',
-            borderColor: 'var(--color-white)',
-          }}
-        >
-          <span>{canOrganize ? 'Open Organizer Studio' : 'Start Hosting Events'}</span>
-          <ArrowRight size={17} />
-        </Link>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Link
+            to="/organization"
+            className="btn btn-lg"
+            style={{
+              backgroundColor: 'var(--color-white)',
+              color: 'var(--color-forest-dark)',
+              borderColor: 'var(--color-white)',
+            }}
+          >
+            <Building2 size={17} />
+            <span>Explore Business Platform</span>
+            <ArrowRight size={16} />
+          </Link>
+          {canOrganize && (
+            <Link
+              to="/organizer/events/new"
+              className="btn btn-lg"
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                color: 'var(--color-white)',
+                borderColor: 'rgba(255,255,255,0.28)',
+              }}
+            >
+              <span>Create Event</span>
+            </Link>
+          )}
+        </div>
       </section>
     </div>
   );

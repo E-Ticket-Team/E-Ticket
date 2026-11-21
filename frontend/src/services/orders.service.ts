@@ -6,6 +6,13 @@ export interface CreateOrderPayload {
     ticketTypeId: string;
     quantity: number;
   }>;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+}
+
+function guestHeaders(guestToken?: string | null): Record<string, string> {
+  return guestToken ? { 'x-guest-token': guestToken } : {};
 }
 
 export const ordersService = {
@@ -20,16 +27,25 @@ export const ordersService = {
     return apiRequest<OrderSummary[]>(`${API_V1}/orders`);
   },
 
-  getById(id: string): Promise<OrderSummary> {
-    return apiRequest<OrderSummary>(`${API_V1}/orders/${encodeURIComponent(id)}`);
+  getById(id: string, guestToken?: string | null): Promise<OrderSummary> {
+    return apiRequest<OrderSummary>(`${API_V1}/orders/${encodeURIComponent(id)}`, {
+      headers: guestHeaders(guestToken),
+      skipUnauthorizedCallback: Boolean(guestToken),
+    });
   },
 
-  cancel(id: string, reason?: string): Promise<OrderSummary> {
+  cancel(
+    id: string,
+    reason?: string,
+    guestToken?: string | null,
+  ): Promise<OrderSummary> {
     return apiRequest<OrderSummary>(
       `${API_V1}/orders/${encodeURIComponent(id)}/cancel`,
       {
         method: 'POST',
         body: JSON.stringify({ reason }),
+        headers: guestHeaders(guestToken),
+        skipUnauthorizedCallback: Boolean(guestToken),
       },
     );
   },

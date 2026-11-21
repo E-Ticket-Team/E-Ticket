@@ -152,6 +152,13 @@ export function AuthGlassShell({
   );
 }
 
+export interface DemoAccountOption {
+  label: string;
+  sublabel?: string;
+  email: string;
+  password: string;
+}
+
 export interface SignIn1Props {
   title?: string;
   subtitle?: string;
@@ -163,6 +170,7 @@ export interface SignIn1Props {
   googleConfigured?: boolean;
   externalError?: string | null;
   signUpLink?: React.ReactNode;
+  demoAccounts?: DemoAccountOption[];
 }
 
 const SignIn1 = ({
@@ -176,6 +184,7 @@ const SignIn1 = ({
   googleConfigured = true,
   externalError = null,
   signUpLink,
+  demoAccounts = [],
 }: SignIn1Props) => {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -303,6 +312,40 @@ const SignIn1 = ({
             </p>
           )}
         </div>
+
+        {demoAccounts.length > 0 && (
+          <div className="pt-3 border-t border-[#E3EBE5]">
+            <div className="text-[10.5px] font-bold uppercase tracking-wider text-[#82948B] text-center mb-2">
+              Quick Role Access
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {demoAccounts.map((acct) => (
+                <button
+                  key={acct.email}
+                  type="button"
+                  disabled={submitting || googleLoading}
+                  aria-label={`Use ${acct.label} account`}
+                  onClick={() => {
+                    setLocalError('');
+                    setEmail(acct.email);
+                    setPassword(acct.password);
+                    onEmailSignIn?.(acct.email, acct.password);
+                  }}
+                  className="flex flex-col items-start px-3 py-2 rounded-xl border border-[#E3EBE5] bg-[#FAFCFA] hover:bg-[#E7F5EE] hover:border-[#087F5B]/40 text-left transition disabled:opacity-50"
+                >
+                  <span className="text-xs font-bold text-[#052E25] leading-tight">
+                    {acct.label}
+                  </span>
+                  {acct.sublabel && (
+                    <span className="text-[10.5px] text-[#64766D] truncate w-full">
+                      {acct.sublabel}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
     </AuthGlassShell>
   );
