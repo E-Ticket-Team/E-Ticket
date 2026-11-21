@@ -1,5 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Role } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 import * as cookieParser from 'cookie-parser';
 import * as crypto from 'crypto';
 import * as request from 'supertest';
@@ -18,6 +20,7 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
   const organizerEmail = `org-${uniqueSuffix}@eticket.com`;
   const customerEmail = `cust-${uniqueSuffix}@eticket.com`;
   const scannerEmail = `scan-${uniqueSuffix}@eticket.com`;
+  const adminEmail = `admin-e2e-${uniqueSuffix}@eticket.com`;
   const guestBuyerEmail = `guest-${uniqueSuffix}@gmail.com`;
   const password = 'Password123!';
 
@@ -60,6 +63,18 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
 
     await app.init();
     prisma = app.get(PrismaService);
+
+    const hashedAdminPassword = await bcrypt.hash(password, 10);
+    await prisma.user.create({
+      data: {
+        email: adminEmail,
+        password: hashedAdminPassword,
+        firstName: 'E2E',
+        lastName: 'Admin',
+        role: Role.ADMIN,
+        isActive: true,
+      },
+    });
   });
 
   afterAll(async () => {
@@ -96,7 +111,9 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
       await prisma.event.deleteMany({ where: { id: createdEventId } });
     }
     await prisma.user.deleteMany({
-      where: { email: { in: [customerEmail, organizerEmail, scannerEmail] } },
+      where: {
+        email: { in: [customerEmail, organizerEmail, scannerEmail, adminEmail] },
+      },
     });
     await app.close();
   });
@@ -181,10 +198,10 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
         expect(res.body.data.email).toBe(customerEmail);
       });
 
-    // Login as seeded admin to create/promote a dedicated E2E scanner account
+    // Login as E2E admin to create/promote a dedicated E2E scanner account
     const adminLogin = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
-      .send({ email: 'admin@eticket.com', password })
+      .send({ email: adminEmail, password })
       .expect(200);
     adminToken = adminLogin.body.data.accessToken;
 
@@ -565,12 +582,24 @@ describe('Universal E-Ticketing Platform (e2e)', () => {
     expect(payRes.body.data.order.tickets).toHaveLength(1);
     expect(payRes.body.data.order.tickets[0].qrPayload).toMatch(/^ETK1\./);
 
-    // Seeded deterministic tier UUIDs also pass DTO validation (reserve & cancel cleanly)
-    const seededTierId = 'c0000000-0000-0000-0000-000000000001';
+    // Deterministic non-UUIDv4 tier IDs also pass DTO validation (self-contained for empty CI DBs)
+    const deterministicTierId = `c0000000-0000-0000-0000-${uniqueSuffix
+      .slice(-12)
+      .padStart(12, '0')}`;
+    await prisma.ticketType.create({
+      data: {
+        id: deterministicTierId,
+        eventId: createdEventId,
+        name: 'Deterministic Non-V4 UUID Tier',
+        price: 15,
+        totalQuantity: 10,
+        remainingQuantity: 10,
+      },
+    });
     const seededOrderRes = await request(app.getHttpServer())
       .post('/api/v1/orders')
       .send({
-        items: [{ ticketTypeId: seededTierId, quantity: 1 }],
+        items: [{ ticketTypeId: deterministicTierId, quantity: 1 }],
         guestName: 'Seeded Buyer',
         guestEmail: guestBuyerEmail,
       })
