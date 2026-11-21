@@ -1,6 +1,6 @@
 # System & Database Architecture — Universal E-Ticketing Platform
 
-This document describes the end-to-end system architecture, database schema design, request-processing pipeline, and core application flows for the **Universal E-Ticketing Platform**, derived directly from the repository implementation (`frontend/`, `backend/`, `infra/`, and `docker-compose.yml`).
+This document describes the end-to-end system architecture, PostgreSQL database schema, NestJS backend modules, React SPA workspace structure, and core runtime flows derived directly from the repository (`frontend/`, `backend/`, `infra/`, and `docker-compose.yml`).
 
 ---
 
@@ -8,13 +8,14 @@ This document describes the end-to-end system architecture, database schema desi
 
 The platform follows a containerized **3-tier client-server architecture** connected over an isolated Docker bridge network (`eticket-network`):
 
-- **Presentation Tier (`frontend/`)**: React 18 + TypeScript SPA built with Vite and React Router (`BrowserRouter`), served by **Nginx 1.27 Alpine** in production (or Vite Dev Server on port `5173` locally).
-- **Application Tier (`backend/`)**: Modular **NestJS 10** REST API (TypeScript) exposing `/api/v1/*`, `/health`, and Swagger OpenAPI docs at `/api/docs`.
-- **Data Tier (`postgres`)**: **PostgreSQL 16 Alpine** accessed exclusively through **Prisma ORM (`@prisma/client`)**, backed by a persistent volume (`eticket_postgres_data`).
+- **Presentation Tier (`frontend/`):** React 18.3 + TypeScript SPA built with Vite 6, React Router 6 (`BrowserRouter`), Tailwind CSS 3.4, GSAP, and Motion, served by **Nginx 1.27 Alpine** in production (or Vite Dev Server on port `5173` locally).
+- **Application Tier (`backend/`):** Modular **NestJS 10** REST API exposing `/api/v1/*`, `/health`, `/`, and Swagger OpenAPI docs at `/api/docs`, secured with `helmet`, `cookie-parser`, `@nestjs/throttler`, dual `HttpOnly` cookie + Bearer JWT authentication, and optional Google OAuth 2.0 verification (`google-auth-library`).
+- **Data Tier (`postgres`):** **PostgreSQL 16 Alpine** accessed exclusively through **Prisma ORM 5 (`@prisma/client`)**, backed by versioned SQL migrations (`backend/prisma/migrations/`) and persistent volume `eticket_postgres_data`.
 
 ```mermaid
 flowchart LR
-    Client["Client Browser / Gate Scanner"]
+    Client["Client Browser / Gate Camera Scanner"]
+    Google["Google OAuth 2.0 / GIS"]
 
     subgraph DockerNetwork["Docker Network: eticket-network"]
         Nginx["Frontend Container (Nginx :80 -> Host :3000)"]
@@ -24,9 +25,11 @@ flowchart LR
     end
 
     Client -->|"HTTP :3000 (SPA, /api/*, /health)"| Nginx
+    Client -.->|"Google Identity Services"| Google
     Client -.->|"Direct API / Swagger (:4000/api/docs)"| API
     Nginx -->|"Static React Bundle (SPA fallback)"| Nginx
     Nginx -->|"Proxy /api/* & /health"| API
+    API -.->|"Verify ID / Access Token"| Google
     API -->|"Prisma ORM (TCP :5432)"| DB
     DB --- Vol
 ```
@@ -42,27 +45,41 @@ flowchart LR
 
 ## 2. Database Architecture & Schema Design
 
-The database schema is defined in `backend/prisma/schema.prisma` using PostgreSQL as the primary relational store. All primary keys use **UUID v4** (`@default(uuid())`) to prevent sequential ID enumeration, and monetary values use fixed-precision **`DECIMAL(10, 2)`** to avoid floating-point rounding errors.
+The database schema is defined in [`backend/prisma/schema.prisma`](../backend/prisma/schema.prisma) with three versioned migrations under `backend/prisma/migrations/`:
+1. `20261121154357_upgrade_ticketing_lifecycle`
+2. `20261121170000_add_google_oauth`
+3. `20261121180000_add_guest_checkout_orders`
+
+All primary keys use **UUID v4** (`@default(uuid())`) and monetary values use **`DECIMAL(10, 2)`** paired with integer minor-unit calculations (`backend/src/common/utils/money.util.ts`).
 
 ### 2.1 Entity-Relationship Diagram (ERD)
 
 ```mermaid
 erDiagram
     USERS ||--o{ EVENTS : "organizes (organizerId)"
-    USERS ||--o{ ORDERS : "places (userId)"
+    USERS ||--o{ ORDERS : "places (userId, optional for guest)"
+    USERS ||--o{ EVENT_SCANNERS : "assigned to gate (userId)"
+    USERS ||--o{ TICKETS : "checks in (checkedInById)"
     EVENTS ||--o{ TICKET_TYPES : "defines (eventId, Cascade)"
-    ORDERS ||--o{ TICKETS : "contains (orderId, Cascade)"
-    TICKET_TYPES ||--o{ TICKETS : "issues (ticketTypeId)"
+    EVENTS ||--o{ EVENT_SCANNERS : "authorizes (eventId, Cascade)"
+    ORDERS ||--o{ ORDER_ITEMS : "reserves (orderId, Cascade)"
+    ORDERS ||--o{ PAYMENTS : "settles (orderId, Cascade)"
+    ORDERS ||--o{ TICKETS : "issues (orderId, Cascade)"
+    TICKET_TYPES ||--o{ ORDER_ITEMS : "quoted by (ticketTypeId)"
+    TICKET_TYPES ||--o{ TICKETS : "grants (ticketTypeId)"
 
     USERS {
         uuid id PK
         string email UK
-        string password
+        string password "Nullable (Google OAuth)"
+        string googleId UK "Nullable"
+        string avatarUrl "Nullable"
         string firstName
         string lastName
         string organizationName
         string phoneNumber
         enum role "ADMIN | ORGANIZER | CUSTOMER | SCANNER"
+        boolean isActive "Default true"
         datetime createdAt
         datetime updatedAt
     }
@@ -97,10 +114,46 @@ erDiagram
 
     ORDERS {
         uuid id PK
-        uuid userId FK
+        uuid userId FK "Nullable (Guest orders)"
+        string guestName
+        string guestEmail
+        string guestPhone
+        string guestTokenHash
         decimal totalAmount "DECIMAL(10,2)"
-        enum status "PENDING | PAID | CANCELLED | REFUNDED"
+        string currency "Default USD"
+        enum status "PENDING | PAID | CANCELLED | REFUNDED | EXPIRED"
         string paymentReference
+        datetime expiresAt
+        datetime paidAt
+        datetime cancelledAt
+        string cancellationReason
+        boolean inventoryReleased "Default false"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    ORDER_ITEMS {
+        uuid id PK
+        uuid orderId FK
+        uuid ticketTypeId FK
+        int quantity
+        decimal unitPrice "DECIMAL(10,2)"
+        decimal subtotal "DECIMAL(10,2)"
+        datetime createdAt
+    }
+
+    PAYMENTS {
+        uuid id PK
+        uuid orderId FK
+        enum provider "MOCK | KHQR"
+        decimal amount "DECIMAL(10,2)"
+        string currency "Default USD"
+        enum status "PENDING | SUCCEEDED | FAILED | REFUNDED"
+        string idempotencyKey UK
+        string providerReference UK
+        string failureReason
+        json metadata
+        datetime paidAt
         datetime createdAt
         datetime updatedAt
     }
@@ -111,101 +164,43 @@ erDiagram
         uuid ticketTypeId FK
         string ticketCode UK
         string qrCode
+        string qrTokenHash UK
         enum status "VALID | USED | CANCELLED"
         datetime usedAt
+        uuid checkedInById FK
         datetime createdAt
         datetime updatedAt
     }
+
+    EVENT_SCANNERS {
+        uuid id PK
+        uuid eventId FK
+        uuid userId FK
+        datetime assignedAt
+    }
 ```
 
-### 2.2 Table & Column Specification
+### 2.2 Table & Column Summary
 
-#### `users` (Prisma model `User`)
-Stores all platform accounts across customers, event organizers, gate scanners, and administrators.
-
-| Column | Type | Constraints / Default | Notes |
-|---|---|---|---|
-| `id` | `UUID` | `PK`, `@default(uuid())` | Unique user identifier |
-| `email` | `VARCHAR` | `UNIQUE`, `NOT NULL` | Normalized to lowercase during auth |
-| `password` | `VARCHAR` | `NOT NULL` | Bcrypt hash (10 salt rounds); stripped from API profile responses |
-| `firstName` | `VARCHAR` | Nullable | Given name |
-| `lastName` | `VARCHAR` | Nullable | Family name |
-| `organizationName` | `VARCHAR` | Nullable | Populated for `ORGANIZER` accounts |
-| `phoneNumber` | `VARCHAR` | Nullable | Contact phone number |
-| `role` | `Role` | `NOT NULL`, `@default(CUSTOMER)` | `ADMIN`, `ORGANIZER`, `CUSTOMER`, `SCANNER` |
-| `createdAt` | `TIMESTAMP` | `@default(now())` | Record creation time |
-| `updatedAt` | `TIMESTAMP` | `@updatedAt` | Auto-updated modification time |
-
-#### `events` (Prisma model `Event`)
-Stores event listings, schedules, venue metadata, and publishing lifecycle state.
-
-| Column | Type | Constraints / Default | Notes |
-|---|---|---|---|
-| `id` | `UUID` | `PK`, `@default(uuid())` | Unique event identifier |
-| `title` | `VARCHAR` | `NOT NULL` | Event title |
-| `description` | `TEXT` | Nullable | Full event summary |
-| `category` | `VARCHAR` | Nullable | E.g. `Conference & Music`, `Music`, `Sports` |
-| `venue` | `VARCHAR` | `NOT NULL` | Venue name |
-| `location` | `VARCHAR` | Nullable | City/country string |
-| `bannerUrl` | `VARCHAR` | Nullable | Public banner image URL |
-| `startDate` | `TIMESTAMP` | `NOT NULL` | Event start (ISO 8601) |
-| `endDate` | `TIMESTAMP` | `NOT NULL` | Event end (ISO 8601) |
-| `status` | `EventStatus` | `NOT NULL`, `@default(DRAFT)` | `DRAFT`, `PUBLISHED`, `CANCELLED`, `COMPLETED` |
-| `organizerId` | `UUID` | `FK -> users.id`, `NOT NULL` | Owning organizer user |
-| `createdAt` | `TIMESTAMP` | `@default(now())` | Record creation time |
-| `updatedAt` | `TIMESTAMP` | `@updatedAt` | Auto-updated modification time |
-
-#### `ticket_types` (Prisma model `TicketType`)
-Defines pricing tiers and seat inventory per event. Deleted automatically when its parent event is deleted (`onDelete: Cascade`).
-
-| Column | Type | Constraints / Default | Notes |
-|---|---|---|---|
-| `id` | `UUID` | `PK`, `@default(uuid())` | Unique tier identifier |
-| `eventId` | `UUID` | `FK -> events.id` (`CASCADE`) | Parent event |
-| `name` | `VARCHAR` | `NOT NULL` | Tier name (e.g., `VIP All-Access Pass`, `General Admission`) |
-| `description` | `TEXT` | Nullable | Tier perks and inclusion summary |
-| `price` | `DECIMAL(10, 2)` | `NOT NULL` | Ticket price in USD |
-| `totalQuantity` | `INT` | `NOT NULL` | Initial allocated inventory |
-| `remainingQuantity` | `INT` | `NOT NULL` | Remaining available tickets (initialized to `totalQuantity`) |
-| `createdAt` | `TIMESTAMP` | `@default(now())` | Record creation time |
-| `updatedAt` | `TIMESTAMP` | `@updatedAt` | Auto-updated modification time |
-
-#### `orders` (Prisma model `Order`)
-Tracks customer ticket purchases and payment settlement status.
-
-| Column | Type | Constraints / Default | Notes |
-|---|---|---|---|
-| `id` | `UUID` | `PK`, `@default(uuid())` | Unique order identifier |
-| `userId` | `UUID` | `FK -> users.id`, `NOT NULL` | Purchasing customer |
-| `totalAmount` | `DECIMAL(10, 2)` | `NOT NULL` | Total order value |
-| `status` | `OrderStatus` | `NOT NULL`, `@default(PENDING)` | `PENDING`, `PAID`, `CANCELLED`, `REFUNDED` |
-| `paymentReference` | `VARCHAR` | Nullable | External payment reference (e.g., `KHQR-REF-998822`) |
-| `createdAt` | `TIMESTAMP` | `@default(now())` | Record creation time |
-| `updatedAt` | `TIMESTAMP` | `@updatedAt` | Auto-updated modification time |
-
-#### `tickets` (Prisma model `Ticket`)
-Represents individual issued digital passes tied to an order and a ticket tier. Deleted automatically when its parent order is deleted (`onDelete: Cascade`).
-
-| Column | Type | Constraints / Default | Notes |
-|---|---|---|---|
-| `id` | `UUID` | `PK`, `@default(uuid())` | Unique ticket record ID |
-| `orderId` | `UUID` | `FK -> orders.id` (`CASCADE`) | Parent order |
-| `ticketTypeId` | `UUID` | `FK -> ticket_types.id`, `NOT NULL` | Tier granted by this ticket |
-| `ticketCode` | `VARCHAR` | `UNIQUE`, `NOT NULL` | Human-readable & QR-encoded pass code (e.g., `TKT-2026-VIP-001`) |
-| `qrCode` | `TEXT` | Nullable | Optional stored SVG/QR payload |
-| `status` | `TicketStatus` | `NOT NULL`, `@default(VALID)` | `VALID`, `USED`, `CANCELLED` |
-| `usedAt` | `TIMESTAMP` | Nullable | Exact check-in timestamp set on validation |
-| `createdAt` | `TIMESTAMP` | `@default(now())` | Record creation time |
-| `updatedAt` | `TIMESTAMP` | `@updatedAt` | Auto-updated modification time |
+- **`users` (`User`):** Stores platform accounts. `password` is nullable for Google OAuth accounts (`googleId` unique, `avatarUrl`). `isActive` supports account suspension.
+- **`events` (`Event`):** Stores event metadata, schedule (`startDate`, `endDate`), `status` (`DRAFT`, `PUBLISHED`, `CANCELLED`, `COMPLETED`), and `organizerId`. Indexed on `[status, startDate]`, `[organizerId]`, and `[category]`.
+- **`ticket_types` (`TicketType`):** Tier pricing (`DECIMAL(10,2)`) and inventory (`totalQuantity`, `remainingQuantity`). `remainingQuantity` represents unreserved, unsold tickets. Cascades on `Event` deletion.
+- **`orders` (`Order`):** Supports both registered users (`userId`) and guest buyers (`guestName`, `guestEmail`, `guestPhone`, `guestTokenHash`). Tracks `status` (`PENDING`, `PAID`, `CANCELLED`, `REFUNDED`, `EXPIRED`), `expiresAt`, `paidAt`, `cancelledAt`, `cancellationReason`, and `inventoryReleased` (prevents double inventory release). Indexed on `[userId, createdAt]` and `[status, expiresAt]`.
+- **`order_items` (`OrderItem`):** Snapshots `unitPrice`, `quantity`, and `subtotal` at reservation time before tickets are issued.
+- **`payments` (`Payment`):** Tracks provider (`MOCK` | `KHQR`), `status` (`PENDING`, `SUCCEEDED`, `FAILED`, `REFUNDED`), unique `idempotencyKey`, unique `providerReference`, `failureReason`, and JSON `metadata`.
+- **`tickets` (`Ticket`):** Issued after payment succeeds. Stores unique `ticketCode` (`TKT-...`), unique SHA-256 `qrTokenHash` (never storing the raw signed `ETK1.` token), `status` (`VALID`, `USED`, `CANCELLED`), `usedAt`, and `checkedInById` (FK to `users.id` with `SetNull`).
+- **`event_scanners` (`EventScanner`):** Maps `SCANNER` users to authorized events (`@@unique([eventId, userId])`).
 
 ### 2.3 Seed Data Reference (`backend/prisma/seed.ts`)
 
-Running `npm run prisma:seed` populates deterministic sample records for local testing:
-- **Organizer**: `a0000000-0000-0000-0000-000000000001` (`organizer@eticket.com` / `Password123!`, role `ORGANIZER`)
-- **Customer**: `a0000000-0000-0000-0000-000000000002` (`customer@eticket.com` / `Password123!`, role `CUSTOMER`)
-- **Event**: `b0000000-0000-0000-0000-000000000001` (`Cambodia Tech Expo & Music Festival 2026`, `PUBLISHED`)
-- **Ticket Tiers**: `VIP All-Access Pass` (`$99.00`, `199/200` left) and `General Admission` (`$25.00`, `1000/1000` left)
-- **Order & Ticket**: Order `d0000000-0000-0000-0000-000000000001` (`PAID`, `KHQR-REF-998822`) with Ticket `TKT-2026-VIP-001` (`VALID`)
+Running `npm run prisma:seed` upserts deterministic development records:
+- **Users** (all password `Password123!`):
+  - `ADMIN`: `admin@eticket.com` (`a0000000-...-0000`)
+  - `ORGANIZER`: `organizer@eticket.com` (`a0000000-...-0001`, *Cambodia Tech Events Ltd.*)
+  - `CUSTOMER`: `customer@eticket.com` (`a0000000-...-0002`)
+  - `SCANNER`: `scanner@eticket.com` (`a0000000-...-0003`)
+- **Events:** 6 `PUBLISHED` events with local banner images under `frontend/public/banners/` (including *Cambodia Tech Expo & Music Festival 2026*, *Mekong Sunset Electronic Night*, *Angkor International Half Marathon*, *Southeast Asia Product & Design Summit*, *Khmer Culinary & Heritage Cinema Night*, and *Phnom Penh Stand-Up & Indie Live Special*), each with 2 ticket tiers and `EventScanner` access granted to `scanner@eticket.com`.
+- **Order & Ticket:** `PAID` order `d0000000-...-0001` (`$99.00`, `MOCK-SEED-998822`) with `OrderItem`, `Payment` (`seed-payment-001`), and valid ticket **`TKT-2026-VIP-001`**.
 
 ---
 
@@ -213,156 +208,114 @@ Running `npm run prisma:seed` populates deterministic sample records for local t
 
 ### 3.1 Backend Module Architecture (`backend/src/`)
 
-`AppModule` composes configuration validation (`ConfigModule` + `env.validation.ts`), database connectivity (`PrismaModule` marked global), and domain feature modules:
+`AppModule` composes global configuration (`ConfigModule` + `env.validation.ts`), global rate limiting (`ThrottlerModule` / `ThrottlerGuard` at 200 req/min), global `PrismaModule`, and 8 domain modules:
 
-- **`AuthModule`**: JWT Bearer authentication (`@nestjs/jwt`, `passport-jwt`), password hashing (`bcryptjs`), `JwtAuthGuard`, `RolesGuard`, `@Public()`, `@Roles()`, and `@CurrentUser()` decorators.
-- **`EventsModule`**: Event CRUD (`POST /events`, `GET /events`, `GET /events/:id`, `PATCH /events/:id`, `DELETE /events/:id`) with category/status query filtering.
-- **`TicketsModule`**: Ticket tier creation & lookup (`POST /tickets/types`, `GET /tickets/types/event/:eventId`), ticket inspection (`GET /tickets/:code`), and single-entry validation (`POST /tickets/validate`).
-- **`HealthModule`**: `GET /health` database readiness probe (`SELECT 1` latency measurement via `PrismaService.checkHealth()`).
+| Module | Responsibility |
+|---|---|
+| `HealthModule` | `GET /health` executing `SELECT 1` latency check via `PrismaService.checkHealth()` |
+| `AuthModule` | Cookie + Bearer JWT authentication, customer/organizer registration, Google OAuth 2.0 verification, `JwtAuthGuard`, `OptionalJwtAuthGuard`, `RolesGuard` |
+| `EventsModule` | Paginated discovery (`QueryEventsDto`), category listing, owner/admin CRUD, deletion guard when orders/tickets exist |
+| `TicketsModule` | Ticket tier CRUD (`POST`/`PATCH`/`DELETE`), customer wallet (`GET /my`), scanner event list, authorized inspection, atomic gate check-in (`POST /validate`) |
+| `OrdersModule` | `Serializable` inventory reservation, guest token issuance/verification, lazy stale-order expiration, cancellation & unused-paid refunds |
+| `PaymentsModule` | `PaymentProviderStrategy` (`MockPaymentProvider`, `KHQRPaymentProvider` stub), idempotency key replay, HMAC webhook handling, post-payment ticket issuance |
+| `OrganizerModule` | Gross/refunded/net revenue metrics, sales series, event analytics, attendee/check-in lists, and team `SCANNER` account provisioning/assignment |
+| `AdminModule` | Platform-wide KPIs, user list/creation/role/status updates (with self-demotion/suspension guards), global order & ticket monitors |
 
 #### NestJS Request & Response Pipeline (`backend/src/main.ts`)
 
 ```mermaid
 flowchart TD
-    Req["Incoming HTTP Request"] --> Cors["CORS Middleware"]
-    Cors --> Prefix["Global Prefix (/api/v1, excluding /health & /)"]
-    Prefix --> Guard["Route Guards (JwtAuthGuard / RolesGuard when applied)"]
+    Req["Incoming HTTP Request"] --> Sec["Helmet + cookie-parser + Credentialed CORS"]
+    Sec --> Throttle["ThrottlerGuard (Global & Route Limits)"]
+    Throttle --> Prefix["Global Prefix (/api/v1, excluding /health & /)"]
+    Prefix --> Guard["Auth & Role Guards (JwtAuthGuard / OptionalJwtAuthGuard / RolesGuard)"]
     Guard --> Pipe["ValidationPipe (whitelist, forbidNonWhitelisted, transform)"]
-    Pipe --> LogIn["LoggingInterceptor (Request Start)"]
+    Pipe --> LogIn["LoggingInterceptor"]
     LogIn --> Ctrl["Controller -> Service -> PrismaService"]
-    Ctrl -->|"Success"| Transform["TransformInterceptor (Wraps { success: true, data, timestamp }; skips /health)"]
-    Ctrl -->|"Exception"| Filters["HttpExceptionFilter / AllExceptionsFilter ({ success: false, statusCode, error, message })"]
+    Ctrl -->|"Success"| Transform["TransformInterceptor ({ success: true, data, timestamp }; skips /health)"]
+    Ctrl -->|"Exception"| Filters["AllExceptionsFilter / HttpExceptionFilter ({ success: false, statusCode, error, message })"]
 ```
 
 ### 3.2 Frontend Application Architecture (`frontend/src/`)
 
-The frontend is a **React 18 + TypeScript** SPA using `BrowserRouter` for clean, hash-free URLs and solid high-contrast surfaces (`src/index.css`):
+The frontend SPA uses `BrowserRouter` and splits routes across three layout shells:
 
-| Route | Page Component | Purpose & Backend Endpoints Used |
-|---|---|---|
-| `/` | `HomePage` | Hero overview, live event metrics, featured events, quick ticket lookup (`GET /api/v1/events`) |
-| `/events` | `EventsPage` | Searchable & filterable catalog (`GET /api/v1/events?status=`) |
-| `/events/:id` | `EventDetailPage` | Event details, organizer info, tier availability (`GET /api/v1/events/:id`, `GET /api/v1/tickets/types/event/:eventId`) |
-| `/tickets`, `/tickets/:code` | `TicketLookupPage` | Digital pass lookup + QR rendering (`qrcode.react`) (`GET /api/v1/tickets/:code`) |
-| `/scanner` | `ScannerPage` | Gate check-in scanner with optional `BarcodeDetector` camera mode (`POST /api/v1/tickets/validate`) |
-| `/organizer` | `OrganizerDashboardPage` | Organizer KPIs, status switching, delete confirmation (`GET`, `PATCH`, `DELETE /api/v1/events`) |
-| `/organizer/events/new`, `/organizer/events/:id/edit` | `EventFormPage` | Create/edit events and create ticket tiers (`POST`/`PATCH /api/v1/events`, `POST /api/v1/tickets/types`) |
-| `/status` | `SystemStatusPage` | Live API & PostgreSQL health/latency view (`GET /health`) |
+1. **Standalone Auth Pages** (no header/footer): `/login`, `/register`, `/register/organization`
+2. **Public & Customer Layout (`Layout` + `Navbar` + `Footer`):**
+   - Public & Guest Checkout: `/`, `/events`, `/events/:id`, `/organization`, `/checkout/:orderId`
+   - Authenticated Customer (`ProtectedRoute`): `/my-account`, `/my-tickets`, `/tickets`, `/tickets/:code`
+3. **Standalone SaaS Workspaces (`DashboardShellLayout` / `OrganizerWorkspaceLayout`):**
+   - Gate Scanner (`SCANNER`, `ORGANIZER`, `ADMIN`): `/scanner`, `/organizer/scanner`
+   - Organizer Studio (`ORGANIZER`, `ADMIN`): `/organizer`, `/organizer/events`, `/organizer/events/new`, `/organizer/events/:id/edit`, `/organizer/orders`, `/organizer/attendees`, `/organizer/check-ins`, `/organizer/team`
+   - Admin Console (`ADMIN`): `/admin`
 
-All requests pass through `frontend/src/services/api.ts`, which automatically unwraps `{ success: true, data }` envelopes, handles `204 No Content`, and converts backend error payloads into typed `ApiError` instances.
+All API calls flow through `frontend/src/services/api.ts`, which sends `credentials: 'include'` for `HttpOnly` cookies, unwraps `{ success: true, data }` envelopes, triggers session-expired callbacks on `401`, and normalizes errors into `ApiError`. Guest order tokens are saved per order in `localStorage` via `frontend/src/utils/guestOrders.ts` and passed via `x-guest-token` headers or `?token=` query params.
 
 ---
 
 ## 4. Core End-to-End Flows
 
-### 4.1 Authentication & Profile Flow (JWT Bearer)
+### 4.1 Authentication & Google OAuth Flow
 
 ```mermaid
 sequenceDiagram
-    actor User as Customer / Organizer
+    actor User
     participant API as AuthController / AuthService
+    participant Google as Google OAuth / TokenInfo
     participant DB as PostgreSQL (users)
 
-    User->>API: POST /api/v1/auth/register/customer (or /register/organization, /login)
-    API->>API: Normalize email (trim + lowercase)
-    API->>DB: findUnique({ where: { email } })
-    alt Registration & email exists
-        API-->>User: 409 Conflict
-    else Login & invalid credentials
-        API-->>User: 401 Unauthorized
-    else Valid request
-        API->>API: bcrypt hash / compare (10 rounds)
-        API->>API: Sign JWT { sub: user.id, email, role } (expiresIn: JWT_EXPIRES_IN)
-        API-->>User: 200/201 { user (no password), accessToken, tokenType: "Bearer", expiresIn }
+    alt Email / Password Login or Register
+        User->>API: POST /api/v1/auth/login (or /register/customer, /register/organization)
+        API->>DB: Lookup / create user (password hashed with bcrypt 10 rounds)
+    else Google Sign-In
+        User->>API: POST /api/v1/auth/google { credential | accessToken, accountType? }
+        API->>Google: Verify ID token (OAuth2Client.verifyIdToken) or accessToken (oauth2/v3/userinfo)
+        Google-->>API: Verified sub (googleId), email, name, picture
+        API->>DB: Find by googleId or email; create CUSTOMER/ORGANIZER if new
     end
 
-    User->>API: GET /api/v1/auth/me (Authorization: Bearer <token>)
-    API->>API: JwtAuthGuard -> JwtStrategy.validate(payload)
-    API->>DB: findUnique({ where: { id: payload.sub } })
-    API-->>User: 200 UserProfileDto
+    API->>API: Check isActive !== false & sign JWT { sub, email, role }
+    API-->>User: Set HttpOnly cookie (eticket_access_token) + return { user, accessToken, tokenType, expiresIn }
 ```
 
-### 4.2 Organizer Event & Ticket Tier Management Flow
+### 4.2 Guest & Authenticated Order Reservation, Payment & QR Issuance
 
 ```mermaid
 sequenceDiagram
-    actor Org as Organizer (Frontend Studio)
-    participant API as EventsController & TicketsController
-    participant DB as PostgreSQL (events, ticket_types)
+    actor Buyer as Customer / Guest
+    participant Orders as OrdersService
+    participant Pay as PaymentsService
+    participant DB as PostgreSQL
 
-    Org->>API: POST /api/v1/events (CreateEventDto)
-    API->>DB: INSERT INTO events (status defaults to DRAFT unless specified)
-    DB-->>API: Event + organizer + ticketTypes
-    API-->>Org: 201 Created -> Navigate to /organizer/events/:id/edit
+    Buyer->>Orders: POST /api/v1/orders { items, guestName?, guestEmail?, guestPhone? }
+    Orders->>Orders: Expire stale PENDING orders -> coalesce & sort items
+    Orders->>DB: Serializable TX: updateMany(remainingQuantity >= qty) + create Order & OrderItems
+    DB-->>Orders: Order (PENDING, expiresAt = now + ORDER_RESERVATION_MINUTES)
+    Orders-->>Buyer: 201 Order (+ plaintext guestToken once for guest orders)
 
-    Org->>API: POST /api/v1/tickets/types (eventId, name, price, totalQuantity)
-    API->>DB: Verify event exists -> INSERT INTO ticket_types (remainingQuantity = totalQuantity)
-    DB-->>API: TicketType
-    API-->>Org: 201 Created
-
-    Org->>API: PATCH /api/v1/events/:id ({ status: "PUBLISHED" })
-    API->>DB: UPDATE events SET status = 'PUBLISHED'
-    API-->>Org: 200 OK (Visible on public /events)
-
-    opt Delete Event
-        Org->>API: DELETE /api/v1/events/:id
-        API->>DB: DELETE FROM events (Cascades to ticket_types)
-        API-->>Org: 204 No Content
+    Buyer->>Pay: POST /api/v1/orders/:id/payment (+ x-guest-token if guest)
+    Pay->>Pay: Check idempotencyKey & execute PaymentProviderStrategy (MOCK / KHQR)
+    alt Payment SUCCEEDED
+        Pay->>DB: TX: Claim PENDING order -> PAID, record Payment, issue Tickets (TKT-..., qrTokenHash = SHA256(ETK1...))
+        Pay-->>Buyer: 200 { payment, order (with tickets[].qrPayload) }
+    else Payment FAILED
+        Pay->>DB: Record FAILED payment (order stays PENDING until paid, cancelled, or expired)
+        Pay-->>Buyer: 200 { payment, order }
     end
 ```
 
-### 4.3 Ticket Pass Lookup & Gate Check-In Validation Flow
-
-The gate check-in flow prevents duplicate entry by checking `TicketStatus` and atomically transitioning `VALID` tickets to `USED` with a `usedAt` timestamp.
+### 4.3 Gate Ticket Validation State & Sequence
 
 ```mermaid
 stateDiagram-v2
-    [*] --> VALID : Ticket issued for PAID order
-    VALID --> USED : POST /api/v1/tickets/validate (sets usedAt = now)
-    VALID --> CANCELLED : Order cancelled / refunded
-    USED --> USED : Repeat scan rejected (409 Conflict)
+    [*] --> VALID : Issued when Order becomes PAID
+    VALID --> USED : POST /api/v1/tickets/validate (atomic updateMany, sets usedAt & checkedInById)
+    VALID --> CANCELLED : Paid unused order refunded/cancelled
+    USED --> USED : Repeat or concurrent scan rejected (409 Conflict)
     CANCELLED --> CANCELLED : Scan rejected (400 Bad Request)
 ```
 
-```mermaid
-sequenceDiagram
-    actor Staff as Gate Staff (/scanner)
-    participant API as TicketsController / TicketsService
-    participant DB as PostgreSQL (tickets)
-
-    Staff->>API: POST /api/v1/tickets/validate { ticketCode }
-    API->>DB: findUnique({ where: { ticketCode }, include: ticketType.event, order.user })
-    alt Ticket not found
-        API-->>Staff: 404 Not Found
-    else status == USED
-        API-->>Staff: 409 Conflict ("already been used on <usedAt>")
-    else status == CANCELLED
-        API-->>Staff: 400 Bad Request ("has been cancelled")
-    else status == VALID
-        API->>DB: update({ status: "USED", usedAt: new Date() })
-        DB-->>API: Updated Ticket
-        API-->>Staff: 200 OK { valid: true, message, ticket }
-    end
-```
-
-### 4.4 Health Check & Startup Synchronization Flow
-
-```mermaid
-flowchart LR
-    Start["Container Start (backend/docker-entrypoint.sh)"] --> Push["npx prisma db push --skip-generate"]
-    Push --> Boot["node dist/src/main (NestJS :4000)"]
-    Boot --> Health["GET /health -> HealthService.check()"]
-    Health --> Probe["PrismaService: SELECT 1 (Measure latencyMs)"]
-    Probe -->|"DB Up"| Ok["200 OK { status: 'ok', database: { status: 'up', latencyMs } }"]
-    Probe -->|"DB Down"| Err["503 Service Unavailable { status: 'error', database: { status: 'down' } }"]
-```
-
----
-
-## 5. Security, Validation & CI/CD Controls
-
-- **Environment Validation (`backend/src/config/env.validation.ts`)**: Fails fast at startup if `DATABASE_URL` is missing or `NODE_ENV`/`PORT` types are invalid.
-- **Strict Payload Whitelisting**: Global `ValidationPipe` enforces `whitelist: true` and `forbidNonWhitelisted: true`, rejecting unknown JSON properties before they reach services.
-- **Credential & Role Protection**: Passwords are hashed with `bcryptjs` (`saltRounds = 10`) and excluded from `AuthService.toUserProfile()` and Prisma `select` projections; `JwtAuthGuard` and `RolesGuard` enforce token verification and RBAC (`ADMIN`, `ORGANIZER`, `CUSTOMER`, `SCANNER`).
-- **Container Hardening**: `backend/Dockerfile` runs under the unprivileged `node` user; `infra/nginx/nginx.conf` handles gzip compression, static asset caching, SPA fallback, and internal `/api/` + `/health` proxying.
-- **Automated CI (`.github/workflows/ci.yml`)**: Every push/PR to `main`, `master`, `feat/**`, and `dev-*` runs `backend-ci` (build, unit tests, Prisma push, E2E tests against PostgreSQL 16), `frontend-ci` (`tsc -b --noEmit` + Vite build), and `docker-ci` (full Compose build and live `/health` + Nginx proxy verification).
+- `TicketsService.validateTicket` parses either a raw `ticketCode` or a signed `ETK1.<ticketCode>.<sig>` payload.
+- If `ETK1.` is provided, `verifySignedCredential` performs timing-safe HMAC-SHA256 + `qrTokenHash` verification.
+- Authorization ensures only `ADMIN`, the event's `ORGANIZER`, or an assigned `EventScanner` can check in tickets for that event.
+- Atomic conditional `tx.ticket.updateMany({ where: { id: ticket.id, status: 'VALID' }, data: { status: 'USED', usedAt: now, checkedInById: actor.id } })` guarantees that concurrent scans at multiple gates cannot admit the same ticket twice.

@@ -137,3 +137,14 @@ npm run prisma:seed
 1. **Bakong KHQR Live Integration:** `KHQRPaymentProvider` is stubbed intentionally (`501 Not Implemented`); implement Bakong KHQR payload generation, MD5 transaction polling, and merchant webhook signature validation once live credentials are provisioned.
 2. **Background Reservation Sweeper:** Stale `PENDING` order expiration currently triggers opportunistically during order creation/reads and payment checks; adding a scheduled NestJS cron worker (`@nestjs/schedule`) would sweep expired orders automatically even during zero traffic.
 3. **Browser E2E Automation:** Adding Playwright browser tests against the running Nginx + API stack would supplement the Vitest + Supertest suites with full real-browser verification.
+
+---
+
+## 7. Post-Report Additions (Current `main` Branch)
+
+Following the Phase 2–8 baseline report above, the following capabilities were added and merged into `main`:
+
+- **Google OAuth 2.0 Sign-In (`backend` + `frontend`):** Added `googleId`, `avatarUrl`, and nullable `password` in Prisma migration `20261121170000_add_google_oauth`, `GET /api/v1/auth/google/config`, `POST /api/v1/auth/google` (`google-auth-library`), and `useGoogleAuth` integration across standalone `/login`, `/register`, and `/register/organization` pages.
+- **Guest Checkout (`backend` + `frontend`):** Added nullable `userId`, `guestName`, `guestEmail`, `guestPhone`, and `guestTokenHash` in Prisma migration `20261121180000_add_guest_checkout_orders`, enabling unauthenticated buyers to reserve, pay, view, and cancel orders via `x-guest-token` / `?token=` without creating an account.
+- **SaaS Organizer Studio, Team Roles & Admin Console:** Added `GET/POST/DELETE /api/v1/organizer/team`, `POST /api/v1/admin/users`, `/organization` business landing page, `/organizer/team` & `/organizer/scanner` workspaces, `DashboardShellLayout` / `OrganizerWorkspaceLayout`, Donut & Sales Bar analytics cards, and the Ivory/Emerald/Forest UI redesign with GSAP/Motion animations.
+- **Self-Contained Backend E2E Suite:** Updated `backend/test/app.e2e-spec.ts` to seed and clean up its own `ADMIN` user and test records so CI runs cleanly against an empty PostgreSQL database.
